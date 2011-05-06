@@ -48,6 +48,9 @@
 
 #include "VRAY_InterpolatedGeometry.h"
 
+#if DEBUG==1
+#define DEBUG
+#endif
 
 using namespace alglib;
 using namespace TimeBlender;
@@ -55,118 +58,149 @@ using namespace TimeBlender;
 
 
 inline void
-GeoInterpolant::calc(const int * axis, 
-					 const int * i,
-					 double    * u, /*TODO Fix mixing types (floats, fpreals, doubles)*/
-				     float      &w)
-{
-	w = alglib::barycentriccalc(*interpolants.at(*axis)->at(*i), *u);
-}
+SplineInterpolant::evaluate(const int *x, 
+                                  int *y,
+                                  float  *u,
+                                  float  *w) const
+{ 
 
-/*
-inline void
-GeoInterpolant::buildPoint(const GEO_Point *prev,
-			 	  	       const GEO_Point *curr,
-			  	  	       const GEO_Point *next,
-					       const int        i, 
-					             alglib::barycentricinterpolant &inpt)
+	/// TODO: This doesn't work. *w doesn't work with evaluateMult()
+	/// but it's defnied by an interface of abstract GeoInterpolant...
+	interpolants.at(*y)->evaluateMulti((fpreal)*u, w, 3, UT_RGB );
+ }
 
-{
 
-	real_1d_array idx;
-	real_1d_array samples;
-
-	for (int j = 0; j < 3; j++)
-	{
-		buildArrays(prev, curr, next, j, idx, samples);	
-		polynomialbuild(idx, samples, *inpt);
-	}
-
-}
-
-*/
 void
-GeoInterpolant::build(const GU_Detail * prev, 
-					  const GU_Detail * curr, 
-					  const GU_Detail * next)
+SplineInterpolant::interpolate(float    u, 
+							   GU_Detail * const gdp) const
+{
+
+	GEO_Point * ppt;
+	int   i = 0;
+	float x[] = {0,0,0};
+	static const int jx=0;
+	
+	FOR_ALL_GPOINTS(gdp, ppt)
+	{
+		evaluate(&jx, &i, &u, x);
+	    ppt->setPos(x[0],x[1],x[2]);
+		i++;
+	}
+}
+
+void
+SplineInterpolant::build(const GU_Detail * prev, 
+					     const GU_Detail * curr, 
+					     const GU_Detail * next)
+{
+	UT_Spline  *spline;
+	fpreal32 v[3]; int i = 0;
+	const GEO_Point * currppt;
+
+		
+	/// Retrieve points' positions and cunstruct
+	/// splines from it. Store results in this->hinterpolate <vector>,
+	/// so it can be evaluated later. 
+	/// TODO: Wy could try multithreading on this loop.
+	
+	FOR_ALL_GPOINTS(curr, currppt)
+	{
+		spline  = new UT_Spline(); 
+		spline->setGlobalBasis(UT_SPLINE_CATMULL_ROM);
+		spline->setSize(3, 3);
+
+		v[0] = prev->points()[i]->getPos()[0];
+		v[1] = prev->points()[i]->getPos()[1];
+		v[2] = prev->points()[i]->getPos()[2];
+		spline->setValue(0, v, 3);
+
+		v[0] = currppt->getPos()[0];
+		v[1] = currppt->getPos()[1];
+		v[2] = currppt->getPos()[2];
+		spline->setValue(1, v, 3);
+
+		v[0] = next->points()[i]->getPos()[0];
+		v[1] = next->points()[i]->getPos()[1];
+		v[2] = next->points()[i]->getPos()[2];
+		spline->setValue(2, v, 3);
+
+		interpolants.at(i) = spline;	
+		
+		i++;
+	} 
+	/// Interpolant is valid for evaluation.
+	/// This is quite optimistic assumption, 
+	/// as no checkes were performed.
+	this->valid = true;
+}
+
+inline void
+ALGLIB_Interpolant::evaluate(const  int *x, 
+                                    int *y,
+                                  float  *u,
+                                  float  &w) const
+{ 
+	w = alglib::barycentriccalc(*interpolants.at(*x)->at(*y), (double)*u);
+ }
+
+
+
+void
+ALGLIB_Interpolant::interpolate(float    u, 
+								GU_Detail * const gdp) const
+{
+
+	GEO_Point * ppt;
+	int   i = 0;
+	float x = 0; float y = 0; float z = 0;
+	static const int jx = 0, jy = 1, jz = 2;
+	
+	FOR_ALL_GPOINTS(gdp, ppt)
+	{
+		evaluate(&jx, &i, &u, x);
+		evaluate(&jy, &i, &u, y);
+		evaluate(&jz, &i, &u, z);
+	    ppt->setPos(x,y,z);
+		i++;
+	}
+}
+
+
+
+void
+ALGLIB_Interpolant::build(const GU_Detail * prev, 
+					      const GU_Detail * curr, 
+					      const GU_Detail * next)
 {
 	int i = 0;
 	int j;
 	const GEO_Point  *currppt, *prevppt, *nextppt;
 	
-	/// interpolation type?
-	if (this->itype == INTER_BARYCEN_RAT)
-	{
-		real_1d_array idx;
-		real_1d_array samples;
+	real_1d_array idx;
+	real_1d_array samples;
 
-		/// Unfortunatelly for BRI we create a single interpolant
-		/// for every component (float).
-		/// TODO: Wy could try multithreading on this loop.
-		FOR_ALL_GPOINTS(curr, currppt)
-		{   
-			prevppt = prev->points()[i];
-			nextppt = next->points()[i];
+	/// Unfortunatelly for BRI we create a single interpolant
+	/// for every component (float).
+	/// TODO: Wy could try multithreading on this loop.
+	FOR_ALL_GPOINTS(curr, currppt)
+	{   
+		prevppt = prev->points()[i];
+		nextppt = next->points()[i];
 
-			for (j = 0; j < 3; j++)
-			{
-				build_ALGLIB_Arrays(prevppt, currppt, nextppt, j, idx, samples);
-				barycentricinterpolant * bc =  new barycentricinterpolant();
-				polynomialbuild(idx, samples, *bc);
-				interpolants.at(j)->at(i) = bc;
-			}
-			i++;
-		}
-
-	  	this->valid = true;		
-
-	} else 
-	{
-		UT_Spline  *spline;
-		fpreal32 v[3];
-
-		
-		/// Retrieve points' positions and cunstruct
-		/// splines from it. Store results in this->hinterpolate <vector>,
-		/// so it can be evaluated later. 
-		/// TODO: Wy could try multithreading on this loop.
- 
-		FOR_ALL_GPOINTS(curr, currppt)
+		for (j = 0; j < 3; j++)
 		{
-			spline  = new UT_Spline(); 
-			spline->setGlobalBasis(UT_SPLINE_CATMULL_ROM);
-			spline->setSize(3, 3);
-
-			v[0] = prev->points()[i]->getPos()[0];
-			v[1] = prev->points()[i]->getPos()[1];
-			v[2] = prev->points()[i]->getPos()[2];
-			spline->setValue(0, v, 3);
-
-			v[0] = currppt->getPos()[0];
-			v[1] = currppt->getPos()[1];
-			v[2] = currppt->getPos()[2];
-			spline->setValue(1, v, 3);
-
-			v[0] = next->points()[i]->getPos()[0];
-			v[1] = next->points()[i]->getPos()[1];
-			v[2] = next->points()[i]->getPos()[2];
-			spline->setValue(2, v, 3);
-
-			hinterpolants.at(i) = spline;	
-			
-			i++;
+			build_Arrays(prevppt, currppt, nextppt, j, idx, samples);
+			barycentricinterpolant * bc =  new barycentricinterpolant();
+			polynomialbuild(idx, samples, *bc);
+			interpolants.at(j)->at(i) = bc;
 		}
-		/// Interpolant is valid for evaluation.
-		/// This is quite optimistic assumption, 
-		/// no checkes were performed.
-		this->valid = true;	
+		i++;
 	}
+    this->valid = true;		
 }
 
-
-
 inline void
-GeoInterpolant::build_ALGLIB_Arrays(const GEO_Point * prev, 
+ALGLIB_Interpolant::build_Arrays(const GEO_Point * prev, 
 					   				const GEO_Point * curr, 
 					   				const GEO_Point * next,
 									const int         i,
@@ -189,7 +223,6 @@ GeoInterpolant::build_ALGLIB_Arrays(const GEO_Point * prev,
 	v.setcontent(3, rawsamples);
 
 }
-
 
 // Arguments:
 static VRAY_ProceduralArg theArgs[] =
@@ -297,46 +330,9 @@ VRAY_IGeometry::initialize(const UT_BoundingBox *)
 
 // Return bounding box of a procedural:
 void
- VRAY_IGeometry::getBoundingBox(UT_BoundingBox &box)
+VRAY_IGeometry::getBoundingBox(UT_BoundingBox &box)
 { 
 	box = myBox;
-}
-
-
-void
-VRAY_IGeometry::interpolate(GeoInterpolant * gi, 
-							double         * u, 
-							GU_Detail      * gdp)
-{
-
-	GEO_Point * ppt;
-	int   i = 0;
-	float x = 0; float y = 0; float z = 0;
-	static const int jx = 0, jy = 1, jz = 2;
-	
-	FOR_ALL_GPOINTS(gdp, ppt)
-	{
-		gi->calc(&jx, &i, u, x);
-		gi->calc(&jy, &i, u, y);
-		gi->calc(&jz, &i, u, z);
-	    ppt->setPos(x,y,z);
-		i++;
-	}
-
-}
-
-
-int
-VRAY_IGeometry::saveGeometry(const GU_Detail * gdp,
-							 const UT_String * path)
-{
-	
-		//char tmpname[50];
-		//const char * name = "/tmp/IG_test";
-		//sprintf(tmpname, "%s.%i.bgeo", name, i+25);   
-		//bgdp->save((const char*)tmpname, 0,0);
-		return 1;
-
 }
 
 
@@ -377,9 +373,13 @@ VRAY_IGeometry::render()
 
 
 	/// This is main part:
+	/// TODO: assign shaders
 	openGeometryObject();
 	changeSetting("surface", "plastic diff (1.0 0.8 0.8)", "object");
 
+	#ifdef DEBUG
+	debug("openGeometryObject();");
+	#endif
 	/// Perform geometry interpolation.
 	if (mydointerpolate)	
 	{
@@ -387,12 +387,24 @@ VRAY_IGeometry::render()
 		double fshutter = 0, shutter= 0;
 		GU_Detail  *bgdp = NULL;
 
+		/// Allocate interpolant for npoints, and  build it with 3 or 5 time sampels. 
+		ALGLIB_Interpolant * gi = new ALGLIB_Interpolant(gdp1->points().entries());
+		//SplineInterpolant    * gi = new SplineInterpolant(gdp1->points().entries());
 
-		/// Allocate interpolant for npoints,  and  build it with 3 or 5 time sampels. 
-		GeoInterpolant * gi = new GeoInterpolant(gdp1->points().entries());
-    	gi->build(gdp0, gdp1, gdp2);
+    	if (!gi->isAlloc())
+		{
+			debug("Couldn't allocate storate for the interpolant.");
+			return; 
+		}
+
+		/// Build the interpolant from provided gdps:
+		gi->build(gdp0, gdp1, gdp2);
+		if (!gi->isValid())
+		{
+			debug("Couldn't build the interpolant.");
+			return;
+		}
 		
-		//if (0 == 0) return;
 		
 		/// Loop over samples generating interpolated geometry and add them to Mantra
 		for (int i =1; i < mynsamples+1; i++)
@@ -408,16 +420,20 @@ VRAY_IGeometry::render()
 			/// Allocate blur file and copy initial from current frame gdp.
   			bgdp = allocateGeometry();
 			bgdp->copy((const GU_Detail ) gdp1, 0, false, true);
-
+		
 			/// Call interpolator, which replaces points' positions 
 			/// (and only positions!(?)), finnaly add new blur file.
 			if (bgdp && gi->isValid())
 			{
-				/// We evaluate geo on remapped time
+				#ifdef DEBUG
+				debug("interpolating");
+				#endif
+				/// We evaluate interpolant on remapped time
 				/// but add it to a scene on user time (?)
-				interpolate(gi, &fshutter, bgdp);
+				gi->interpolate(fshutter, bgdp);
 				addGeometry(bgdp, shutter*myshutter);
-			} else 
+			} 
+			else 
 			{
 				closeObject();
 			}
@@ -438,4 +454,3 @@ VRAY_IGeometry::render()
 }
 
 #endif
-
