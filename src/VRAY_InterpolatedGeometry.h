@@ -16,8 +16,6 @@
 #include <interpolation.h>
 #include <vector>
 
-#define IG_TYPE_BRI 0
-#define IG_TYPE_CAT 1
 
 
 namespace TimeBlender
@@ -26,66 +24,90 @@ namespace TimeBlender
 /// Interpolation type enumarator. 
 typedef enum {
 
-	INTER_LINEAR,           /* */
-	INTER_CATMULL_ROM,      /*Native HDK UT_Spline*/
-	INTER_BARYCEN_RAT,      /*Barycentric Rational Interpolation*/
+	INTER_CONSTANT, /*Native HDK UT_Splines*/
+	INTER_LINEAR,					 
+	INTER_CATMULLROM,
+	INTER_CUBIC,
+	INTER_BARYCENTRIC,  /*Barycentric Rational Interpolation*/          
 
 } IG_INTER_TYPES;
 
 
 
-/* -------- Utility functions. ------------ */
-/* -----------------------------------------*/
-inline void fit( const double x, 
-				 const fpreal a, 
-				 const fpreal b, 
-				 const fpreal c, 
-				 const fpreal d, 
-				 double &o) { o = c+((x-a)/(b-a))*(d-c);} 
+////-------- Utility functions. ------------
+
+inline void fit(const double x, 
+                const fpreal a, 
+                const fpreal b, 
+                const fpreal c, 
+                const fpreal d, 
+                double &o) { o = c+((x-a)/(b-a))*(d-c);} 
 
 
-inline void debug(const char * info) { cout << info << endl;}
+inline void debug(const char * info) 
+		{ cout << info << endl;}
+
+
 
 /* Abstract class for storing interpolants. */
-/* -----------------------------------------*/
 class GeoInterpolant
 {
 public:
+	/// Call it in a default constractor.
 	virtual int   initialize(int size, int type) = 0;
+
+	/// Build structures necessery to do work.
 	virtual void  build(const GU_Detail * prev, 
                         const GU_Detail * curr, 
                         const GU_Detail * next)  = 0;
-	virtual inline 
-            void  evaluate(const int 	*x, 
-                                 int 	*y, 
-                                 float  *u, 
-                                 float   &w) const = 0;
 
-	virtual void interpolate(const float,
-							 GU_Detail  * const) const = 0;
+	virtual void  build(const GU_Detail *,
+                        const GU_Detail *,
+                        const GU_Detail *, 
+                        const GU_Detail *, 
+                        const GU_Detail *)  = 0;
+
+
+	/// This interpolates previously built stractures, and modifies
+	/// GU_Detail accoring to it.
+	virtual void interpolate(const float, GU_Detail  * const) const = 0;
+
+	/// Object details.
+	/// TODO: implement getMemoryUsage()
+	/// TODO: implement allocation error checker.
+	/// TODO: implement load(), save().
 
 	virtual int getitype() const = 0;
 	virtual bool isValid() const = 0;
 	virtual bool isAlloc() const = 0;
 
 private:
+     /// TODO: This probably shouldn't be in an abstract class. 
      int  mySize;
      bool valid;
-	 bool alloc;
+     bool alloc;
      int  itype;
 };
 
 
-/*------ALGLIB specific GeoInterpolant child.---- */
-/* -----------------------------------------------*/
-class ALGLIB_Interpolant : GeoInterpolant
+///------ALGLIB specific GeoInterpolant child.---- ////
+/// TODO: ALGLIB should be replaced by the own implementation.
+
+class ALGLIB_Interpolant : public GeoInterpolant
 {
 public:
 	// Allocate vectors for storing interpolants structures
-	ALGLIB_Interpolant(int size, int type = INTER_BARYCEN_RAT)
+	ALGLIB_Interpolant(int size, int type = INTER_BARYCENTRIC)
 	{
 		int success = initialize(size, type);
 		if (!success) alloc = false;
+	}
+
+	/// This requires initialization.
+	ALGLIB_Interpolant()
+	{
+		valid              = false;
+		alloc              = false;
 	}	
 
 	/// Allocate memory, set flags.
@@ -98,7 +120,7 @@ public:
 		interpolants.at(1) = &Y;
 		interpolants.at(2) = &Z;
 	
-		itype              = INTER_BARYCEN_RAT; /// NOTE: type is ignored.
+		itype              = INTER_BARYCENTRIC; // NOTE: type is ignored.
 		mySize             = size;
 		valid              = false;
 		alloc              = true;
@@ -108,26 +130,18 @@ public:
 	/// Build interpolants vector un mass for a whole geometry (3 and 5 knots).
 	/// Can eat some memory.
 	void  build(const GU_Detail * prev, 
-			    const GU_Detail * curr, 
-			    const GU_Detail * next);
+                const GU_Detail * curr, 
+                const GU_Detail * next);
 
 	void  build(const GU_Detail * prev2,
-			    const GU_Detail * prev,  
-			    const GU_Detail * curr, 
-			    const GU_Detail * next,
-				const GU_Detail * next2);
+                const GU_Detail * prev,  
+                const GU_Detail * curr,  
+                const GU_Detail * next,
+                const GU_Detail * next2);
 
-
-	/// Calculate interpolat at x,y: x {0..2}, y = {0,....Npoints}, 
-	/// at u parametric length.
-	inline void evaluate (const int   *x, 
-					  	        int   *y, 
-					  			float *u, 
-					  			float &w) const;
 
 	/// Perform interpolation on GU_Detail *.
-	void interpolate(const float,
-					  GU_Detail * const) const;
+	void interpolate(const float, GU_Detail * const) const;
 
 
 	/// Check out interpolation type. This can only be set on class allocation.
@@ -137,26 +151,36 @@ public:
 
 private:
 
+	/// Calculate interpolat at x,y: x {0, 1, 2}, y = {0,...,Npoints}, 
+	/// at u parametric length.
+	inline void evaluate(const int *x, int *y, 
+                         float *u, float &w) const;
+
 	/// Get to the specific interpolant.
 	const alglib::barycentricinterpolant * getInterpolant(int axis, int i)
 	{ 
 		return interpolants.at(axis)->at(i);
 	}
 
-	///Builds arrays of scalars used later by a single interpolant.
-	inline void build_Arrays(const GEO_Point * prev, 
-                             const GEO_Point * curr, 
-                             const GEO_Point * next,
-                             const int         i,
+	/// Builds arrays of scalars used later by a single interpolant.
+	inline void build_Arrays(const GEO_Point * prev, const GEO_Point * curr, 
+                             const GEO_Point * next, const int i, 
+                             alglib::real_1d_array &idx,
+                             alglib::real_1d_array &v);
+
+	inline void build_Arrays(const GEO_Point * prev2, const GEO_Point * prev, 
+                             const GEO_Point * curr, const GEO_Point * next,
+                             const GEO_Point * next2, const int i, 
                              alglib::real_1d_array &idx,
                              alglib::real_1d_array &v);
 
 	/// Internal data structures.
 	int  mySize;  
-	bool valid; // Is set true, when interpolants were created succesfully.
+	bool valid; 
 	int  itype;
 	bool alloc;
 
+	/// 3 vectors of 1-dim interpolants.
 	vector <alglib::barycentricinterpolant *> X;
 	vector <alglib::barycentricinterpolant *> Y;
 	vector <alglib::barycentricinterpolant *> Z;
@@ -166,15 +190,21 @@ private:
 
 
 
-class SplineInterpolant : GeoInterpolant
+class SplineInterpolant : public GeoInterpolant
 {
 public:
 	// Allocate vectors for storing interpolants structures
-	SplineInterpolant(int size, int type = INTER_CATMULL_ROM)
+	SplineInterpolant(int size, int type = INTER_CUBIC)
 	{
 		int success = initialize(size, type);
 		if (!success) alloc = false;
 	}	
+	/// This requires initialization.
+	SplineInterpolant()
+	{
+		valid              = false;
+		alloc              = false;
+	}
 
 	/// Allocate memory, set flags.
 	int initialize(int size, int type)
@@ -197,10 +227,6 @@ public:
 			    const GU_Detail * next,
 				const GU_Detail * next2);
 
-	inline void evaluate (const int   *x, 
-					  	        int   *y, 
-					  			float *u, 
-					  			float *w) const;
 
 	void interpolate(const float,
 					  GU_Detail * const) const;
@@ -210,6 +236,9 @@ public:
 	bool isAlloc() const { return alloc; }; 
 
 private:
+
+	inline void evaluate(const int *x, int *y, 
+                          float *u, float *w) const;
 
 	/// Get to the specific interpolant.
 	const UT_Spline * getInterpolant(int i)
@@ -222,7 +251,7 @@ private:
 	int  itype;
 	bool alloc;
 
-	/// Vector of interpolants.
+	/// Vector of 3-dim interpolants.
 	vector <UT_Spline  *>  interpolants;
 	
 };
@@ -244,15 +273,15 @@ virtual ~VRAY_IGeometry();
 
 private:
 	int        saveGeometry(const GU_Detail *,
-							const UT_String *);
+                                const UT_String *);
 
 	UT_BoundingBox  myBox;
 
 	int             mydointerpolate;
-	int             threeknots;
+	int             mythreeknots;
 	fpreal          myshutter;
 	int             mynsamples;
-	UT_String       myimethod;
+	int             myitype;
 
 	UT_String       myfile;
 	UT_String       myprefile;
