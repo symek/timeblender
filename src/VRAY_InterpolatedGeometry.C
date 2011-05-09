@@ -1,5 +1,5 @@
 /* 
-	Timeblender::VRAY_InterpolatedGeometry v.01, 4.05.2011, 
+	Timeblender::VRAY_InterpolatedGeometry v.01, 9.05.2011, 
 
 	This is a VRAY Procedural DSO which computes a series of interpolated geometry
 	from time samples at rendertime. Main reason for doing this is when we don't have
@@ -23,9 +23,8 @@
 
 	TODO: 
 	- Fix Bounds!
-	- Separete files .C/.h for GInterpolant and VRAY_IGeometry (really? nightmare with name-spaces)
-	- UT_Splines (native HDK) interpolation.
-	- Five knots interpolation.
+	- UT_Splines (native HDK) interpolation (done).
+	- Five knots interpolation (done).
 	- Shutter retimer.
 		-- Extrapolate motion.
 		-- Nonlinear shutter retime a'la Pixar (?)
@@ -40,6 +39,8 @@
 		-- Neigbhourhood search. 
 	- Materials assigment.
 	- Interpolate attributes: N, uv? 
+    - threading (native HDK point loops)
+		-- we need thread-safe vector for that.
 	
 */
 
@@ -66,23 +67,21 @@ SplineInterpolant::evaluate(const int *x,
 
 	/// TODO: This doesn't work. *w doesn't work with evaluateMult()
 	/// but it's defnied by an interface of abstract GeoInterpolant...
-	interpolants.at(*y)->evaluateMulti((fpreal)*u, w, 3, UT_RGB );
+	interpolants.at(*y)->evaluate((fpreal)*u, w, 3, UT_RGB );
  }
 
 
 void
-SplineInterpolant::interpolate(float    u, 
-							   GU_Detail * const gdp) const
+SplineInterpolant::interpolate(float u, GU_Detail * const gdp) const
 {
 
 	GEO_Point * ppt;
 	int   i = 0;
-	float x[] = {0,0,0};
-	static const int jx=0;
+	fpreal32 x[] = {0.0f, 0.0f, 0.0f};
 	
 	FOR_ALL_GPOINTS(gdp, ppt)
 	{
-		evaluate(&jx, &i, &u, x);
+		interpolants.at(i)->evaluate(u, x, 3, (UT_ColorType)2);
 	    ppt->setPos(x[0],x[1],x[2]);
 		i++;
 	}
@@ -92,37 +91,44 @@ void
 SplineInterpolant::build(const GU_Detail * prev, 
 					     const GU_Detail * curr, 
 					     const GU_Detail * next)
+
+{
+
+	/// Call 5 knots builder:
+	build(prev, prev, curr, next, next);
+
+}
+
+
+
+void
+SplineInterpolant::build(const GU_Detail * prev2,
+                         const GU_Detail * prev, 
+					     const GU_Detail * curr, 
+					     const GU_Detail * next,
+                         const GU_Detail * next2)
 {
 	UT_Spline  *spline;
-	fpreal32 v[3]; int i = 0;
+	fpreal32 v1[3]; 
+	int i = 0;
 	const GEO_Point * currppt;
+	const GU_Detail * gdps[] = {prev2, prev, curr, next, next2};
 
-		
-	/// Retrieve points' positions and cunstruct
-	/// splines from it. Store results in this->hinterpolate <vector>,
-	/// so it can be evaluated later. 
 	/// TODO: Wy could try multithreading on this loop.
-	
 	FOR_ALL_GPOINTS(curr, currppt)
 	{
 		spline  = new UT_Spline(); 
-		spline->setGlobalBasis(UT_SPLINE_CATMULL_ROM);
-		spline->setSize(3, 3);
+		spline->setGlobalBasis((UT_SPLINE_BASIS)itype);
+		spline->setSize(5, 3);
 
-		v[0] = prev->points()[i]->getPos()[0];
-		v[1] = prev->points()[i]->getPos()[1];
-		v[2] = prev->points()[i]->getPos()[2];
-		spline->setValue(0, v, 3);
+		for (int j=0; j<5;j++)
+		{
+			v1  = {gdps[j]->points()[i]->getPos().x(),
+                   gdps[j]->points()[i]->getPos().y(),
+                   gdps[j]->points()[i]->getPos().z()};
 
-		v[0] = currppt->getPos()[0];
-		v[1] = currppt->getPos()[1];
-		v[2] = currppt->getPos()[2];
-		spline->setValue(1, v, 3);
-
-		v[0] = next->points()[i]->getPos()[0];
-		v[1] = next->points()[i]->getPos()[1];
-		v[2] = next->points()[i]->getPos()[2];
-		spline->setValue(2, v, 3);
+			spline->setValue(j, v1, 3);
+		}
 
 		interpolants.at(i) = spline;	
 		
@@ -133,6 +139,7 @@ SplineInterpolant::build(const GU_Detail * prev,
 	/// as no checkes were performed.
 	this->valid = true;
 }
+
 
 inline void
 ALGLIB_Interpolant::evaluate(const  int *x, 
@@ -179,8 +186,7 @@ ALGLIB_Interpolant::build(const GU_Detail * prev,
 	real_1d_array idx;
 	real_1d_array samples;
 
-	/// Unfortunatelly for BRI we create a single interpolant
-	/// for every component (float).
+	/// BRI supports only floats type.
 	/// TODO: Wy could try multithreading on this loop.
 	FOR_ALL_GPOINTS(curr, currppt)
 	{   
@@ -199,13 +205,48 @@ ALGLIB_Interpolant::build(const GU_Detail * prev,
     this->valid = true;		
 }
 
+void
+ALGLIB_Interpolant::build(const GU_Detail * prev2,
+                          const GU_Detail * prev, 
+					      const GU_Detail * curr, 
+					      const GU_Detail * next,
+                          const GU_Detail * next2)
+{
+	int i = 0;
+	int j;
+	const GEO_Point  *currppt, *prevppt, *nextppt, *prevppt2, *nextppt2;
+	
+	real_1d_array idx;
+	real_1d_array samples;
+
+	/// BRI supports only floats type.
+	/// TODO: Wy could try multithreading on this loop.
+	FOR_ALL_GPOINTS(curr, currppt)
+	{   
+		prevppt = prev->points()[i];
+		nextppt = next->points()[i];
+		prevppt2 = prev2->points()[i];
+		nextppt2 = next2->points()[i];
+
+		for (j = 0; j < 3; j++)
+		{
+			build_Arrays(prevppt2, prevppt, currppt, nextppt,  nextppt2, j, idx, samples);
+			barycentricinterpolant * bc =  new barycentricinterpolant();
+			polynomialbuild(idx, samples, *bc);
+			interpolants.at(j)->at(i) = bc;
+		}
+		i++;
+	}
+    this->valid = true;		
+}
+
 inline void
 ALGLIB_Interpolant::build_Arrays(const GEO_Point * prev, 
-					   				const GEO_Point * curr, 
-					   				const GEO_Point * next,
-									const int         i,
-					   				real_1d_array &idx,
-					   				real_1d_array &v)
+                                 const GEO_Point * curr, 
+                                 const GEO_Point * next,
+                                 const int         i,
+                                 real_1d_array &idx,
+                                 real_1d_array &v)
 {
 
 	double rawsamples[3];
@@ -224,6 +265,35 @@ ALGLIB_Interpolant::build_Arrays(const GEO_Point * prev,
 
 }
 
+inline void
+ALGLIB_Interpolant::build_Arrays(const GEO_Point * prev2,
+                                 const GEO_Point * prev, 
+                                 const GEO_Point * curr, 
+                                 const GEO_Point * next,
+                                 const GEO_Point * next2,
+                                 const int         i,
+                                 real_1d_array &idx,
+                                 real_1d_array &v)
+{
+
+	static double rawsamples[5];
+	static const double ii[]  = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+	idx.setcontent(5, ii);
+
+	UT_Vector4  currpos,  prevpos,  nextpos, prevpos2,  nextpos2;
+	prevpos2 = prev2->getPos(); prevpos = prev->getPos();
+	currpos  = curr->getPos(); nextpos  = next->getPos();
+	nextpos2 = next2->getPos();
+
+	rawsamples[0] = (double)prevpos2[i];
+	rawsamples[1] = (double)prevpos[i];  
+	rawsamples[2] = (double)currpos[i]; 
+	rawsamples[3] = (double)nextpos[i];
+	rawsamples[4] = (double)nextpos2[i];
+	v.setcontent(5, rawsamples);
+
+}
+
 // Arguments:
 static VRAY_ProceduralArg theArgs[] =
 {
@@ -237,10 +307,10 @@ static VRAY_ProceduralArg theArgs[] =
 	VRAY_ProceduralArg("nextfile2", "string", ""),
 
 	VRAY_ProceduralArg("dointerpolate","int",   "1"),
-	VRAY_ProceduralArg("nsamples",    "int",    "6"),
-	VRAY_ProceduralArg("imethod",     "string", "bri"),
-	VRAY_ProceduralArg("shutter",     "real",   "1"),
-    VRAY_ProceduralArg("velocityblur","int",    "0"),
+	VRAY_ProceduralArg("nsamples",     "int",   "6"),
+	VRAY_ProceduralArg("itype",        "int",   "4"),
+	VRAY_ProceduralArg("shutter",      "real",  "1"),
+    VRAY_ProceduralArg("velocityblur", "int",   "0"),
 
 	VRAY_ProceduralArg("shutterretime", "int", "0"),
 
@@ -296,22 +366,22 @@ VRAY_IGeometry::initialize(const UT_BoundingBox *)
 	if (!import("dointerpolate", &mydointerpolate, 1)) 
 		mydointerpolate = 1;
 	
-		if (!import("threeknots", &threeknots, 1)) 
-			threeknots = 1;
+		if (!import("threeknots", &mythreeknots, 1)) 
+			mythreeknots = 1;
 		if (!import("shutter", &myshutter, 1))
 			myshutter = 1;
 		if (!import("nsamples", &mynsamples, 1))
 			mynsamples = 6;
-		if (!import("imethod", myimethod))
-			myimethod = "bri";
+		if (!import("itype", &myitype, 1))
+			myitype = 4;
 
-	if (!import("prefile", myprefile))  cout << "No pre sample to interpolate" << endl;
-	if (!import("nextfile", mynextfile)) cout << "No post sample to interpolate" << endl;
+	if (!import("prefile", myprefile))  cout << "No pre sample to interpolate." << endl;
+	if (!import("nextfile", mynextfile)) cout << "No post sample to interpolate." << endl;
 
-	if (threeknots == 0)
+	if (mythreeknots == 0)
 	{
 		import("prefile2", myprefile2);
-		import("nextfile2", mynextfile2); 
+		import("nextfile2",mynextfile2); 
 	}
 
 
@@ -343,34 +413,57 @@ void
 VRAY_IGeometry::render()
 {
 
-	GU_Detail *gdp0, *gdp1, *gdp2;
+	GU_Detail *gdp, *gdpp, *gdpn, *gdpp2, *gdpn2;
 
-	gdp0 = allocateGeometry();
-	gdp1 = allocateGeometry();
-	gdp2 = allocateGeometry();
+	gdpp = allocateGeometry();
+	gdp  = allocateGeometry();
+	gdpn = allocateGeometry();
 
-	if (gdp0->load(myprefile,0) < 0) 
+	if (gdpp->load(myprefile,0) < 0) 
 	{
 		cout << "Can't open pre frame geometry: " << myprefile << endl;
-		freeGeometry(gdp0);
-		gdp0 = 0;
+		freeGeometry(gdpp);
+		gdpp = 0;
 	}
 
-	if (gdp1->load(myfile, 0) < 0)
+	if (gdp->load(myfile, 0) < 0)
 	{
 		cout << "Can't open current frame geometry: " << myfile << endl;
-		freeGeometry(gdp1);
-		gdp1 = 0;
+		freeGeometry(gdp);
+		gdp = 0;
 		return;
 	}
 
-	if (gdp2->load(mynextfile, 0) < 0)
+	if (gdpn->load(mynextfile, 0) < 0)
 	{
 		cout << "Can't open next frame geometry: " << mynextfile << endl;
-		freeGeometry(gdp2);
-		gdp2 = 0;
+		freeGeometry(gdpn);
+		gdpn = 0;
 	}
+	
+	/// 5 knots mode:
+	if (!mythreeknots)
+	{
+		gdpp2 = allocateGeometry();
+		gdpn2 = allocateGeometry();
 
+		if (gdpp2->load(mynextfile2, 0) < 0)
+		{
+			cout << "Can't open pre pre frame geometry: " << myprefile2 << endl;
+			freeGeometry(gdpp2);
+			gdpp2 = 0;
+		}
+
+		if (gdpn2->load(mynextfile2, 0) < 0)
+		{
+			cout << "Can't open second next frame geometry: " << mynextfile2 << endl;
+			freeGeometry(gdpn2);
+			gdpn2 = 0;
+		}
+
+
+	}
+		
 
 	/// This is main part:
 	/// TODO: assign shaders
@@ -378,18 +471,25 @@ VRAY_IGeometry::render()
 	changeSetting("surface", "plastic diff (1.0 0.8 0.8)", "object");
 
 	#ifdef DEBUG
-	debug("openGeometryObject();");
+		debug("openGeometryObject();");
 	#endif
 	/// Perform geometry interpolation.
 	if (mydointerpolate)	
-	{
-		static const fpreal min = 0, max = 1, nmin = 0.5, nmax = 1.0; 
-		double fshutter = 0, shutter= 0;
-		GU_Detail  *bgdp = NULL;
+	{ 
+		GeoInterpolant * gi;
+		static const fpreal min = 0.0, max = 1.0, nmin = 0.5; 
+		fpreal nmax = 1.0;
+		if (!mythreeknots) nmax = 0.75; 
 
-		/// Allocate interpolant for npoints, and  build it with 3 or 5 time sampels. 
-		ALGLIB_Interpolant * gi = new ALGLIB_Interpolant(gdp1->points().entries());
-		//SplineInterpolant    * gi = new SplineInterpolant(gdp1->points().entries());
+		double fshutter = 0, shutter= 0;
+
+		GU_Detail *bgdp = NULL;
+
+		/// Allocate interpolant for npoints, and and choose type:
+		if (myitype	== 4)
+			gi = new ALGLIB_Interpolant(gdp->points().entries());
+		else
+			gi = new SplineInterpolant(gdp->points().entries(), myitype);
 
     	if (!gi->isAlloc())
 		{
@@ -397,8 +497,11 @@ VRAY_IGeometry::render()
 			return; 
 		}
 
-		/// Build the interpolant from provided gdps:
-		gi->build(gdp0, gdp1, gdp2);
+		/// Build the interpolant from provided gdps
+		/// with 3 or 5 time samples:
+		if (mythreeknots) gi->build(gdpp, gdp, gdpn);
+		else gi->build(gdpp2, gdpp, gdp, gdpn, gdpn2);
+
 		if (!gi->isValid())
 		{
 			debug("Couldn't build the interpolant.");
@@ -419,14 +522,14 @@ VRAY_IGeometry::render()
 
 			/// Allocate blur file and copy initial from current frame gdp.
   			bgdp = allocateGeometry();
-			bgdp->copy((const GU_Detail ) gdp1, 0, false, true);
+			bgdp->copy((const GU_Detail ) gdp, 0, false, true);
 		
 			/// Call interpolator, which replaces points' positions 
 			/// (and only positions!(?)), finnaly add new blur file.
 			if (bgdp && gi->isValid())
 			{
 				#ifdef DEBUG
-				debug("interpolating");
+					debug("interpolating");
 				#endif
 				/// We evaluate interpolant on remapped time
 				/// but add it to a scene on user time (?)
@@ -442,10 +545,10 @@ VRAY_IGeometry::render()
 	else 
 	/// Proceed with standard blur file:
 	{
-		addGeometry(gdp1, 0); 
-		if (gdp2) 
+		addGeometry(gdp, 0); 
+		if (gdpn) 
 		{
-			addGeometry(gdp2, myshutter);	
+			addGeometry(gdpn, myshutter);	
 		}
 	}
 	
