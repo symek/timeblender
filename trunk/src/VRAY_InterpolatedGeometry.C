@@ -1,5 +1,5 @@
 /* 
-	Timeblender::VRAY_InterpolatedGeometry v.01, 4.05.2011, 
+	Timeblender::VRAY_InterpolatedGeometry v.01, 11.05.2011, 
 
 	This is a VRAY Procedural DSO which computes a series of interpolated geometry
 	from time samples at rendertime. Main reason for doing this is when we don't have
@@ -21,7 +21,7 @@
 
 	TODO: 
 	- Fix Bounds!
-	- Materials assigment.
+	- Materials assigment (limited).
 	- Own implementation of BRI (done).
 	- UT_Splines (native HDK) interpolation (done).
 	- Five knots interpolation (done).
@@ -435,7 +435,7 @@ VRAY_IGeometry::render()
 		gdpp2 = allocateGeometry();
 		gdpn2 = allocateGeometry();
 
-		if (gdpp2->load(mynextfile2, 0) < 0)
+		if (gdpp2->load(myprefile2, 0) < 0)
 		{
 			cout << "Can't open pre pre frame geometry: " << myprefile2 << endl;
 			freeGeometry(gdpp2);
@@ -470,19 +470,22 @@ VRAY_IGeometry::render()
 		if (!mythreeknots) nmax = 0.75; 
 
 		fpreal32 fshutter = 0, shutter= 0;
-
 		GU_Detail *bgdp;
-		/// Allocate interpolant for npoints, and and choose type:
-		if (myitype	== 4)
-			gi = new BRInterpolant(gdp->points().entries());
-		else
-			gi = new SplineInterpolant(gdp->points().entries(), myitype);
-
-    	if (!gi->isAlloc())
-		{
-			debug("Couldn't allocate storate for the interpolant.");
-			return; 
+		
+		/// Allocate interpolant for npoints, and choose type:
+        if (myitype	== INTER_BARYCENTRIC)
+        {
+            gi = new BRInterpolant(gdp->points().entries());
 		}
+        else
+        {
+            gi = new SplineInterpolant(gdp->points().entries(), myitype);
+        }
+        if (!gi->isAlloc())
+        {
+            debug("Couldn't allocate storate for the interpolant.");
+            return; 
+         }
 
 		/// Build the interpolant from provided gdps
 		/// with 3 or 5 time samples:
@@ -520,7 +523,7 @@ VRAY_IGeometry::render()
 				#endif
 				/// We evaluate interpolant on remapped time
 				/// but add it to a scene on user time (?)
-				gi->interpolate(fshutter, bgdp);
+				gi->interpolate(fshutter*myshutter, bgdp);
 				addGeometry(bgdp, shutter*myshutter);
 				//referenceGeometry(bgdp);
 			} 
