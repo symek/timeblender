@@ -12,8 +12,8 @@
 #include <UT/UT_Vector3.h>
 #include <UT/UT_Spline.h>
 #include <UT/UT_Color.h>
+#include <SYS/SYS_Math.h>
 
-#include <interpolation.h>
 #include <vector>
 
 
@@ -46,6 +46,33 @@ inline void fit(const double x,
 
 inline void debug(const char * info) 
 		{ cout << info << endl;}
+
+
+/// An implementation of Barycentric Rational Interpolation based on "Numerical Recipes":
+/// "Barycentric Rational Interpolation with no Poles and High Rates of Approximation",
+/// by Michael S. Floater  and Kai Hormann.
+
+class TB_Bri
+{
+public:
+    /// ii: index array; x: value array; n: arrays' size; 
+    /// d: interpolation order < n-1.
+    TB_Bri(float *ii, float *x, int n, int d) { alloc = initialize(ii, x, n, d); }
+    ~TB_Bri();
+    int initialize(float *ii, float *x, int n, int d);
+    float evaluate(float u) const;
+    int isAlloc() {return alloc;}
+    /// TODO: make possible to reinitialize interpolant with different order value (keeping arrays)
+    /// void setOrder(int d) { order = d;} 
+    
+private:
+    int alloc;
+    int size;
+    int order;
+    float *idx;
+    float *val;
+    float *wei;
+};
 
 
 
@@ -88,107 +115,6 @@ private:
      bool alloc;
      int  itype;
 };
-
-
-///------ALGLIB specific GeoInterpolant child.---- ////
-/// TODO: ALGLIB should be replaced by the own implementation.
-
-class ALGLIB_Interpolant : public GeoInterpolant
-{
-public:
-	// Allocate vectors for storing interpolants structures
-	ALGLIB_Interpolant(int size, int type = INTER_BARYCENTRIC)
-	{
-		int success = initialize(size, type);
-		if (!success) alloc = false;
-	}
-
-	/// This requires initialization.
-	ALGLIB_Interpolant()
-	{
-		valid              = false;
-		alloc              = false;
-	}	
-
-	/// Allocate memory, set flags.
-	int initialize(int size, int type)
-	{
-		X.resize(size); Y.resize(size);
-		Z.resize(size);
-		interpolants.resize(3);  
-		interpolants.at(0) = &X;
-		interpolants.at(1) = &Y;
-		interpolants.at(2) = &Z;
-	
-		itype              = INTER_BARYCENTRIC; // NOTE: type is ignored.
-		mySize             = size;
-		valid              = false;
-		alloc              = true;
-		return               1;
-	}
-
-	/// Build interpolants vector un mass for a whole geometry (3 and 5 knots).
-	/// Can eat some memory.
-	void  build(const GU_Detail * prev, 
-                const GU_Detail * curr, 
-                const GU_Detail * next);
-
-	void  build(const GU_Detail * prev2,
-                const GU_Detail * prev,  
-                const GU_Detail * curr,  
-                const GU_Detail * next,
-                const GU_Detail * next2);
-
-
-	/// Perform interpolation on GU_Detail *.
-	void interpolate(const float, GU_Detail * const) const;
-
-
-	/// Check out interpolation type. This can only be set on class allocation.
-	int getitype() const { return itype; };
-	bool isValid() const { return valid; };
-	bool isAlloc() const { return alloc; }; 
-
-private:
-
-	/// Calculate interpolat at x,y: x {0, 1, 2}, y = {0,...,Npoints}, 
-	/// at u parametric length.
-	inline void evaluate(const int *x, int *y, 
-                         float *u, float &w) const;
-
-	/// Get to the specific interpolant.
-	const alglib::barycentricinterpolant * getInterpolant(int axis, int i)
-	{ 
-		return interpolants.at(axis)->at(i);
-	}
-
-	/// Builds arrays of scalars used later by a single interpolant.
-	inline void build_Arrays(const GEO_Point * prev, const GEO_Point * curr, 
-                             const GEO_Point * next, const int i, 
-                             alglib::real_1d_array &idx,
-                             alglib::real_1d_array &v);
-
-	inline void build_Arrays(const GEO_Point * prev2, const GEO_Point * prev, 
-                             const GEO_Point * curr, const GEO_Point * next,
-                             const GEO_Point * next2, const int i, 
-                             alglib::real_1d_array &idx,
-                             alglib::real_1d_array &v);
-
-	/// Internal data structures.
-	int  mySize;  
-	bool valid; 
-	int  itype;
-	bool alloc;
-
-	/// 3 vectors of 1-dim interpolants.
-	vector <alglib::barycentricinterpolant *> X;
-	vector <alglib::barycentricinterpolant *> Y;
-	vector <alglib::barycentricinterpolant *> Z;
-	vector <vector <alglib::barycentricinterpolant *> *> interpolants;
-};
-
-
-
 
 class SplineInterpolant : public GeoInterpolant
 {
@@ -256,6 +182,71 @@ private:
 	
 };
 
+
+
+
+class BRInterpolant : public GeoInterpolant
+{
+public:
+	// Allocate vectors for storing interpolants structures
+	BRInterpolant(int size, int type = INTER_BARYCENTRIC)
+	{
+		if(!initialize(size, type)) alloc = false;
+	}	
+	/// This requires initialization.
+	BRInterpolant()
+	{
+		valid = false;
+		alloc = false;
+	}
+
+	/// Allocate memory, set flags.
+	int initialize(int size, int type)
+	{
+		interpolants.resize(3);
+		X.resize(size); Y.resize(size);
+		Z.resize(size);
+		interpolants.at(0) = &X;
+		interpolants.at(1) = &Y;
+		interpolants.at(2) = &Z;
+		
+		itype  = INTER_BARYCENTRIC;
+		mySize = size;
+		valid  = false;
+		alloc  = true;
+		return 1;
+	}
+
+	void  build(const GU_Detail * prev, 
+			    const GU_Detail * curr, 
+			    const GU_Detail * next);
+			    
+    void  build(const GU_Detail *,
+                const GU_Detail *,
+                const GU_Detail *, 
+                const GU_Detail *, 
+                const GU_Detail *);
+
+	
+	void interpolate(const float, GU_Detail * const) const;
+
+	int getitype() const { return itype; };
+	bool isValid() const { return valid; };
+	bool isAlloc() const { return alloc; }; 
+
+private:
+	int  mySize;  
+	bool valid;
+	int  itype;
+	bool alloc;
+
+	/// 3 vectors of 1-dim interpolants.
+	vector <TB_Bri *> X;
+	vector <TB_Bri *> Y;
+	vector <TB_Bri *> Z;
+	vector <vector<TB_Bri  *> *>  interpolants;
+	
+};
 
 
 
