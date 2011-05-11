@@ -1,5 +1,5 @@
 /* 
-	Timeblender::VRAY_InterpolatedGeometry v.01, 9.05.2011, 
+	Timeblender::VRAY_InterpolatedGeometry v.01, 4.05.2011, 
 
 	This is a VRAY Procedural DSO which computes a series of interpolated geometry
 	from time samples at rendertime. Main reason for doing this is when we don't have
@@ -10,34 +10,30 @@
 	It's meant to be a replacement for Mantra Deleyed Load Shader, albeit it can't currently 
 	deal with materials archives stored in *.ifd files (HDK limitation).
 	
-	Currently TimeBlender uses ALGLIB library to compute interpolation according to:
+	TimeBlender implements barycentric rational interpolation described here:
 		"Barycentric Rational Interpolation with no Poles and High Rates of Approximation"
-		by Michael S. Floater and Kai Hormann
+		by Michael S. Floater and Kai Hormann, and explain nicely in "Numerical Recipes".
 
 	This kind of function interpolation performs specially well with small number of samples.
 	It also quarantees to have second derivative ~= 0, what gives a desired smoothness. 
-	
-	ALGLIB is GPL'ed for non-commercial OS usage, but requires commercial license otherwise.
 
 	skk.
 
 	TODO: 
 	- Fix Bounds!
+	- Materials assigment.
+	- Own implementation of BRI (done).
 	- UT_Splines (native HDK) interpolation (done).
 	- Five knots interpolation (done).
 	- Shutter retimer.
 		-- Extrapolate motion.
 		-- Nonlinear shutter retime a'la Pixar (?)
-	- GInterpolant:
-		-- vector proccessing
-		-- Native HDK types?
-		-- Own implementation of BRI(?)
 	- Heavy geometry tests (speed and memory).
 	- Threading. (HDK native method).
 	- Interpolation of non-constant topological geometry 
 		-- Via attribute match (particles ID)
 		-- Neigbhourhood search. 
-	- Materials assigment.
+	
 	- Interpolate attributes: N, uv? 
     - threading (native HDK point loops)
 		-- we need thread-safe vector for that.
@@ -53,22 +49,170 @@
 #define DEBUG
 #endif
 
-using namespace alglib;
 using namespace TimeBlender;
 
 
+float TB_Bri::evaluate(float u) const
+{
+    if (!alloc) return 0.0f;
+    float temp, p, q;
+    p = 0.0; q = 0.0;
+    for (int i=0; i<size; i++)
+    {
+        float t = u-idx[i];
+        if ( t == 0.0)
+        {
+            /// we are exacty on index:
+            return val[i];
+        }
+        else
+        {
+            temp = wei[i] / t;
+            p   += val[i]*temp;
+            q   += temp;
+        }
+    }
+    return p/q;
+}
 
-inline void
-SplineInterpolant::evaluate(const int *x, 
-                                  int *y,
-                                  float  *u,
-                                  float  *w) const
-{ 
+int
+TB_Bri::initialize(float *ii, float *x, int n, int d)
+{
+    /// initialize and compute weights.
+    size = n; order=d;
+    idx  = new float[n];
+    val  = new float[n];
+    wei  = new float[n];
+    
+    /// copy arrays:
+    for (int i=0; i<n; i++)
+    {
+        idx[i] = ii[i];
+        val[i] = x[i];
+    }
 
-	/// TODO: This doesn't work. *w doesn't work with evaluateMult()
-	/// but it's defnied by an interface of abstract GeoInterpolant...
-	interpolants.at(*y)->evaluate((fpreal)*u, w, 3, UT_RGB );
- }
+    /// Compute weights:
+    int imax, imin;
+    float summ, temp;
+    for (int k=0; k<n; k++)
+    {
+        imin = SYSmax(k-d, 0);
+        imax = (k >= (n-d)) ? n-(d+1): k;
+        temp = imin & 1 ? -1.0: 1.0;
+        summ = 0.0;
+        
+        /// Summ:
+        for(int i=imin; i<=imax; i++)
+        {
+            int   jmax = SYSmin(i+d, n-1);
+            float term = 1.0;
+            for (int j=i; j<=jmax; j++)
+            {
+                if(j == k) continue; 
+                term *= (idx[k] - idx[j]);
+            }
+            term  = temp/term;
+            temp  =-temp;
+            summ += term; 
+        }
+        /// Weights computed:
+        wei[k] = summ;
+    }
+    return 1;
+}
+
+
+
+void
+BRInterpolant::interpolate(float u, GU_Detail * const gdp) const
+{
+
+	GEO_Point * ppt;
+	int   i = 0;
+	float x = 0; float y = 0; float z = 0;
+	
+	FOR_ALL_GPOINTS(gdp, ppt)
+	{
+		x = interpolants.at(0)->at(i)->evaluate(u);
+		y = interpolants.at(1)->at(i)->evaluate(u);
+		z = interpolants.at(2)->at(i)->evaluate(u);
+	    ppt->setPos(x, y, z);
+		i++;
+	}
+}
+
+
+
+void
+BRInterpolant::build(const GU_Detail * prev, const GU_Detail * curr, const GU_Detail * next)
+{
+	
+    int i = 0;
+    const GEO_Point  *currppt, *prevppt, *nextppt;
+    float idx[] = {0.0f, 0.5f, 1.0f};
+    float val[] = {0.0, 0.0, 0.0};	
+
+	/// BRI supports only floats type.
+	/// TODO: Wy could try multithreading on this loop.
+	FOR_ALL_GPOINTS(curr, currppt)
+	{   
+		prevppt = prev->points()[i];
+		nextppt = next->points()[i];
+
+		for (int j = 0; j < 3; j++)
+		{
+		    val[0] = prevppt->getPos()[j];
+		    val[1] = currppt->getPos()[j];
+		    val[2] = nextppt->getPos()[j];
+			TB_Bri * bri =  new TB_Bri(idx, val, 3, 2);
+			interpolants.at(j)->at(i) = bri;
+		}
+		i++;
+	}
+    this->valid = true;	
+}
+
+void
+BRInterpolant::build(const GU_Detail * prev2,
+                     const GU_Detail * prev, 
+					 const GU_Detail * curr, 
+					 const GU_Detail * next,
+                     const GU_Detail * next2)
+                     
+{
+
+    int i = 0;
+    const GEO_Point  *currppt, *prevppt, *nextppt,  *prevppt2, *nextppt2;
+    float idx[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
+    float val[] = {0.0, 0.0, 0.0, 0.0, 0.0};	
+
+	/// BRI supports only floats type.
+	/// TODO: Wy could try multithreading on this loop.
+	FOR_ALL_GPOINTS(curr, currppt)
+	{   
+		prevppt = prev->points()[i];
+		nextppt = next->points()[i];
+		prevppt2 = prev2->points()[i];
+		nextppt2 = next2->points()[i];
+
+		for (int j = 0; j < 3; j++)
+		{
+		    val[0] = prevppt2->getPos()[j];
+		    val[1] = prevppt->getPos()[j];
+		    val[2] = currppt->getPos()[j];
+		    val[3] = nextppt->getPos()[j];
+		    val[4] = nextppt2->getPos()[j];
+			TB_Bri * bri =  new TB_Bri(idx, val, 5, 4);
+			interpolants.at(j)->at(i) = bri;
+		}
+		i++;
+	}
+    this->valid = true;	
+
+
+}
+
+
 
 
 void
@@ -98,8 +242,6 @@ SplineInterpolant::build(const GU_Detail * prev,
 	build(prev, prev, curr, next, next);
 
 }
-
-
 
 void
 SplineInterpolant::build(const GU_Detail * prev2,
@@ -138,160 +280,6 @@ SplineInterpolant::build(const GU_Detail * prev2,
 	/// This is quite optimistic assumption, 
 	/// as no checkes were performed.
 	this->valid = true;
-}
-
-
-inline void
-ALGLIB_Interpolant::evaluate(const  int *x, 
-                                    int *y,
-                                  float  *u,
-                                  float  &w) const
-{ 
-	w = alglib::barycentriccalc(*interpolants.at(*x)->at(*y), (double)*u);
- }
-
-
-
-void
-ALGLIB_Interpolant::interpolate(float    u, 
-								GU_Detail * const gdp) const
-{
-
-	GEO_Point * ppt;
-	int   i = 0;
-	float x = 0; float y = 0; float z = 0;
-	static const int jx = 0, jy = 1, jz = 2;
-	
-	FOR_ALL_GPOINTS(gdp, ppt)
-	{
-		evaluate(&jx, &i, &u, x);
-		evaluate(&jy, &i, &u, y);
-		evaluate(&jz, &i, &u, z);
-	    ppt->setPos(x,y,z);
-		i++;
-	}
-}
-
-
-
-void
-ALGLIB_Interpolant::build(const GU_Detail * prev, 
-					      const GU_Detail * curr, 
-					      const GU_Detail * next)
-{
-	int i = 0;
-	int j;
-	const GEO_Point  *currppt, *prevppt, *nextppt;
-	
-	real_1d_array idx;
-	real_1d_array samples;
-
-	/// BRI supports only floats type.
-	/// TODO: Wy could try multithreading on this loop.
-	FOR_ALL_GPOINTS(curr, currppt)
-	{   
-		prevppt = prev->points()[i];
-		nextppt = next->points()[i];
-
-		for (j = 0; j < 3; j++)
-		{
-			build_Arrays(prevppt, currppt, nextppt, j, idx, samples);
-			barycentricinterpolant * bc =  new barycentricinterpolant();
-			polynomialbuild(idx, samples, *bc);
-			interpolants.at(j)->at(i) = bc;
-		}
-		i++;
-	}
-    this->valid = true;		
-}
-
-void
-ALGLIB_Interpolant::build(const GU_Detail * prev2,
-                          const GU_Detail * prev, 
-					      const GU_Detail * curr, 
-					      const GU_Detail * next,
-                          const GU_Detail * next2)
-{
-	int i = 0;
-	int j;
-	const GEO_Point  *currppt, *prevppt, *nextppt, *prevppt2, *nextppt2;
-	
-	real_1d_array idx;
-	real_1d_array samples;
-
-	/// BRI supports only floats type.
-	/// TODO: Wy could try multithreading on this loop.
-	FOR_ALL_GPOINTS(curr, currppt)
-	{   
-		prevppt = prev->points()[i];
-		nextppt = next->points()[i];
-		prevppt2 = prev2->points()[i];
-		nextppt2 = next2->points()[i];
-
-		for (j = 0; j < 3; j++)
-		{
-			build_Arrays(prevppt2, prevppt, currppt, nextppt,  nextppt2, j, idx, samples);
-			barycentricinterpolant * bc =  new barycentricinterpolant();
-			polynomialbuild(idx, samples, *bc);
-			interpolants.at(j)->at(i) = bc;
-		}
-		i++;
-	}
-    this->valid = true;		
-}
-
-inline void
-ALGLIB_Interpolant::build_Arrays(const GEO_Point * prev, 
-                                 const GEO_Point * curr, 
-                                 const GEO_Point * next,
-                                 const int         i,
-                                 real_1d_array &idx,
-                                 real_1d_array &v)
-{
-
-	double rawsamples[3];
-	double ii[]  = {0.0f, 0.5f, 1.0f};
-	idx.setcontent(3, ii);
-
-	UT_Vector4  currpos,  prevpos,  nextpos;
-	prevpos = prev->getPos();
-	currpos = curr->getPos();
-	nextpos = next->getPos();
-
-	rawsamples[0] = (double)prevpos[i]; 
-	rawsamples[1] = (double)currpos[i]; 
-	rawsamples[2] = (double)nextpos[i];
-	v.setcontent(3, rawsamples);
-
-}
-
-inline void
-ALGLIB_Interpolant::build_Arrays(const GEO_Point * prev2,
-                                 const GEO_Point * prev, 
-                                 const GEO_Point * curr, 
-                                 const GEO_Point * next,
-                                 const GEO_Point * next2,
-                                 const int         i,
-                                 real_1d_array &idx,
-                                 real_1d_array &v)
-{
-
-	static double rawsamples[5];
-	static const double ii[]  = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-	idx.setcontent(5, ii);
-
-	UT_Vector4  currpos,  prevpos,  nextpos, prevpos2,  nextpos2;
-	prevpos2 = prev2->getPos(); prevpos = prev->getPos();
-	currpos  = curr->getPos(); nextpos  = next->getPos();
-	nextpos2 = next2->getPos();
-
-	rawsamples[0] = (double)prevpos2[i];
-	rawsamples[1] = (double)prevpos[i];  
-	rawsamples[2] = (double)currpos[i]; 
-	rawsamples[3] = (double)nextpos[i];
-	rawsamples[4] = (double)nextpos2[i];
-	v.setcontent(5, rawsamples);
-
 }
 
 // Arguments:
@@ -481,13 +469,12 @@ VRAY_IGeometry::render()
 		fpreal nmax = 1.0;
 		if (!mythreeknots) nmax = 0.75; 
 
-		double fshutter = 0, shutter= 0;
+		fpreal32 fshutter = 0, shutter= 0;
 
-		GU_Detail *bgdp = NULL;
-
+		GU_Detail *bgdp;
 		/// Allocate interpolant for npoints, and and choose type:
 		if (myitype	== 4)
-			gi = new ALGLIB_Interpolant(gdp->points().entries());
+			gi = new BRInterpolant(gdp->points().entries());
 		else
 			gi = new SplineInterpolant(gdp->points().entries(), myitype);
 
@@ -510,7 +497,7 @@ VRAY_IGeometry::render()
 		
 		
 		/// Loop over samples generating interpolated geometry and add them to Mantra
-		for (int i =1; i < mynsamples+1; i++)
+		for (int i =0; i <= mynsamples; i++)
 		{
 			fshutter = shutter = (1.0f*i/mynsamples);
 
@@ -518,10 +505,10 @@ VRAY_IGeometry::render()
 			/// effectively motion paths beyond Houdini's shutter:
 			/// 0.5->1.0 for 3 knots, 0.5->0.75 for 5 knots.
 			/// TODO: This could be controled by artist.
-			fit(shutter, min, max, nmin, nmax, fshutter);
-
+			fshutter = SYSfit(shutter, min, max, nmin, nmax);
+            
 			/// Allocate blur file and copy initial from current frame gdp.
-  			bgdp = allocateGeometry();
+			bgdp = allocateGeometry();
 			bgdp->copy((const GU_Detail ) gdp, 0, false, true);
 		
 			/// Call interpolator, which replaces points' positions 
@@ -529,12 +516,13 @@ VRAY_IGeometry::render()
 			if (bgdp && gi->isValid())
 			{
 				#ifdef DEBUG
-					debug("interpolating");
+					debug("Interpolating");
 				#endif
 				/// We evaluate interpolant on remapped time
 				/// but add it to a scene on user time (?)
 				gi->interpolate(fshutter, bgdp);
 				addGeometry(bgdp, shutter*myshutter);
+				//referenceGeometry(bgdp);
 			} 
 			else 
 			{
