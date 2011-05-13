@@ -3,8 +3,7 @@
 
     # List of C++ source files to build.
     # SOP_Main.C registers the operators and handles the DSO-specifics.
-    SOURCES = \
-	./src/VRAY_InterpolatedGeometry.C
+    SOURCES = ./src/VRAY_InterpolatedGeometry.C ./src/TB_PointMatch.C
 
 
     # Use the highest optimization level.
@@ -12,17 +11,15 @@
 
     # Additional include directories.
     #INCDIRS = \
-     #   -I/$(HOME)/work/alglib/cpp/include
+    #   -I/$(HOME)/
 
     # Additional library directories.
-   # LIBDIRS = \
-    #    -L$(HOME)/work/alglib/lib
-
+    # LIBDIRS = \
+    #    -L$(HOME)/
+   
     # Additional libraries.
-    #LIBS = \
-     #   $(HOME)/work/alglib/cpp/lib/interpolation.o \
-	#$(HOME)/work/alglib/cpp/lib/ap.o \
-	#$(HOME)/work/alglib/cpp/lib/alglibinternal.o \
+    #LIBS = ./src/TB_PointMatch.o
+	
 	
 
     # Set the plugin library name.
