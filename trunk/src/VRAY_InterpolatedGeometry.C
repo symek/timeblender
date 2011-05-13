@@ -51,7 +51,6 @@
 
 using namespace TimeBlender;
 
-
 float TB_Bri::evaluate(float u) const
 {
     if (!alloc) return 0.0f;
@@ -121,8 +120,6 @@ TB_Bri::initialize(float *ii, float *x, int n, int d)
     return 1;
 }
 
-
-
 void
 BRInterpolant::interpolate(float u, GU_Detail * const gdp) const
 {
@@ -141,12 +138,9 @@ BRInterpolant::interpolate(float u, GU_Detail * const gdp) const
 	}
 }
 
-
-
 void
 BRInterpolant::build(const GU_Detail * prev, const GU_Detail * curr, const GU_Detail * next)
 {
-	
     int i = 0;
     const GEO_Point  *currppt, *prevppt, *nextppt;
     float idx[] = {0.0f, 0.5f, 1.0f};
@@ -180,7 +174,6 @@ BRInterpolant::build(const GU_Detail * prev2,
                      const GU_Detail * next2)
                      
 {
-
     int i = 0;
     const GEO_Point  *currppt, *prevppt, *nextppt,  *prevppt2, *nextppt2;
     float idx[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
@@ -208,17 +201,11 @@ BRInterpolant::build(const GU_Detail * prev2,
 		i++;
 	}
     this->valid = true;	
-
-
 }
-
-
-
 
 void
 SplineInterpolant::interpolate(float u, GU_Detail * const gdp) const
 {
-
 	GEO_Point * ppt;
 	int   i = 0;
 	fpreal32 x[] = {0.0f, 0.0f, 0.0f};
@@ -237,7 +224,6 @@ SplineInterpolant::build(const GU_Detail * prev,
 					     const GU_Detail * next)
 
 {
-
 	/// Call 5 knots builder:
 	build(prev, prev, curr, next, next);
 
@@ -285,26 +271,23 @@ SplineInterpolant::build(const GU_Detail * prev2,
 // Arguments:
 static VRAY_ProceduralArg theArgs[] =
 {
-
-	VRAY_ProceduralArg("threeknots","int",   "1"),
-
-	VRAY_ProceduralArg("prefile2",  "string", ""),
+    VRAY_ProceduralArg("threeknots","int",   "1"),
+    VRAY_ProceduralArg("prefile2",  "string", ""),
     VRAY_ProceduralArg("prefile",   "string", ""),
-	VRAY_ProceduralArg("file",      "string", ""),
-	VRAY_ProceduralArg("nextfile",  "string", ""),
-	VRAY_ProceduralArg("nextfile2", "string", ""),
-
-	VRAY_ProceduralArg("dointerpolate","int",   "1"),
-	VRAY_ProceduralArg("nsamples",     "int",   "6"),
-	VRAY_ProceduralArg("itype",        "int",   "4"),
-	VRAY_ProceduralArg("shutter",      "real",  "1"),
+    VRAY_ProceduralArg("file",      "string", ""),
+    VRAY_ProceduralArg("nextfile",  "string", ""),
+    VRAY_ProceduralArg("nextfile2", "string", ""),
+    VRAY_ProceduralArg("dointerpolate","int",   "1"),
+    VRAY_ProceduralArg("nsamples",     "int",   "6"),
+    VRAY_ProceduralArg("itype",        "int",   "4"),
+    VRAY_ProceduralArg("shutter",      "real",  "1"),
     VRAY_ProceduralArg("velocityblur", "int",   "0"),
-
-	VRAY_ProceduralArg("shutterretime", "int", "0"),
-
-	VRAY_ProceduralArg("minbound", "real", "-10 -10 -10"),
-	VRAY_ProceduralArg("maxbound", "real", "10 10 10"),
-	VRAY_ProceduralArg()
+    VRAY_ProceduralArg("shutterretime", "int", "0"),
+    /// These two are spare, as proc. get bounds in initialize(*box),
+    /// Otherwise they need to be computed by us.
+    VRAY_ProceduralArg("minbound", "real", "-1 -1 -1"),
+    VRAY_ProceduralArg("maxbound", "real", "1 1 1"),
+    VRAY_ProceduralArg()
 };
 
 // VRAY allocator:
@@ -335,55 +318,59 @@ const char *
 VRAY_IGeometry::getClassName()
 {
 	return "VRAY_IGeometry";
-
 }
 
 // Initilize and set bounds:
 int 
-VRAY_IGeometry::initialize(const UT_BoundingBox *)
+VRAY_IGeometry::initialize(const UT_BoundingBox *box)
 {
-	/* Get all parameters here: */ 
+	/// Main file:
 	if (!import("file", myfile)) 
 	{
 		fprintf(stderr, "At least current frame must be specified.");
 		return 0;	
-	} else {
-		if (!myfile.isstring()) return 0;
 	}
 
+    /// Params:
 	if (!import("dointerpolate", &mydointerpolate, 1)) 
-		mydointerpolate = 1;
-	
-		if (!import("threeknots", &mythreeknots, 1)) 
-			mythreeknots = 1;
-		if (!import("shutter", &myshutter, 1))
-			myshutter = 1;
-		if (!import("nsamples", &mynsamples, 1))
-			mynsamples = 6;
-		if (!import("itype", &myitype, 1))
-			myitype = 4;
+		mydointerpolate = 1;	
+    if (!import("threeknots", &mythreeknots, 1)) 
+        mythreeknots = 1;
+    if (!import("shutter", &myshutter, 1))
+        myshutter = 1;
+    if (!import("nsamples", &mynsamples, 1))
+        mynsamples = 6;
+    if (!import("itype", &myitype, 1))
+        myitype = 4;
 
+    /// Time samples:
 	if (!import("prefile", myprefile))  cout << "No pre sample to interpolate." << endl;
 	if (!import("nextfile", mynextfile)) cout << "No post sample to interpolate." << endl;
 
+    /// Knots:
 	if (mythreeknots == 0)
 	{
 		import("prefile2", myprefile2);
-		import("nextfile2",mynextfile2); 
+		import("nextfile2", mynextfile2); 
 	}
 
-
-	// TODO: Bounds don't work!
-	fpreal val[3];
-	val[0] = val[1] = val[2] = -1;
-	import("minbound", val, 3);
-	myBox.initBounds(val[0], val[1], val[2]);
-	val[0] = val[1] = val[2] = 1;
-	import("maxbound", val, 3);
-	myBox.enlargeBounds(val[0], val[1], val[2]);
-	
+	/// Bounding box (optionally from a file).
+	/// TODO: Bounds should be enlarged with all gdps involved
+	/// in interpolation:
+	if (!box)
+    {
+        debug("Warning! No bounding box specified. Computing it from a sources.");
+        GU_Detail gdp;
+        UT_BoundingBox * gdpbox = new UT_BoundingBox();
+        gdp.load(myfile, 0);
+        gdp.getPointBBox(gdpbox);
+        myBox = *gdpbox;
+     } 
+     else 
+     {
+        myBox = *box;
+     }
 	return 1;
-
 }
 
 // Return bounding box of a procedural:
@@ -393,14 +380,10 @@ VRAY_IGeometry::getBoundingBox(UT_BoundingBox &box)
 	box = myBox;
 }
 
-
-
-
 // Actual render:
 void 
 VRAY_IGeometry::render()
 {
-
 	GU_Detail *gdp, *gdpp, *gdpn, *gdpp2, *gdpn2;
 
 	gdpp = allocateGeometry();
@@ -448,29 +431,28 @@ VRAY_IGeometry::render()
 			freeGeometry(gdpn2);
 			gdpn2 = 0;
 		}
-
-
-	}
+    }
 		
+    /// Main part goes here:
+    /// TODO: assign shaders
+    openGeometryObject();
+    changeSetting("surface", "plastic diff (1.0 0.8 0.8)", "object");
 
-	/// This is main part:
-	/// TODO: assign shaders
-	openGeometryObject();
-	changeSetting("surface", "plastic diff (1.0 0.8 0.8)", "object");
-
-	#ifdef DEBUG
-		debug("openGeometryObject();");
-	#endif
+    #ifdef DEBUG
+        debug("openGeometryObject();");
+    #endif
 	/// Perform geometry interpolation.
-	if (mydointerpolate)	
-	{ 
-		GeoInterpolant * gi;
-		static const fpreal min = 0.0, max = 1.0, nmin = 0.5; 
+    if (mydointerpolate)	
+    { 
+        GeoInterpolant * gi;
+        static const fpreal min = 0.0, max = 1.0, nmin = 0.5; 
 		fpreal nmax = 1.0;
-		if (!mythreeknots) nmax = 0.75; 
+		
+        if (!mythreeknots) 
+            nmax = 0.75; 
 
-		fpreal32 fshutter = 0, shutter= 0;
-		GU_Detail *bgdp;
+        fpreal32 fshutter = 0, shutter= 0;
+        GU_Detail *bgdp;
 		
 		/// Allocate interpolant for npoints, and choose type:
         if (myitype	== INTER_BARYCENTRIC)
@@ -485,20 +467,21 @@ VRAY_IGeometry::render()
         {
             debug("Couldn't allocate storate for the interpolant.");
             return; 
-         }
+        }
 
 		/// Build the interpolant from provided gdps
 		/// with 3 or 5 time samples:
-		if (mythreeknots) gi->build(gdpp, gdp, gdpn);
-		else gi->build(gdpp2, gdpp, gdp, gdpn, gdpn2);
+        if (mythreeknots) 
+            gi->build(gdpp, gdp, gdpn);
+        else 
+            gi->build(gdpp2, gdpp, gdp, gdpn, gdpn2);
 
-		if (!gi->isValid())
-		{
-			debug("Couldn't build the interpolant.");
-			return;
-		}
-		
-		
+        if (!gi->isValid())
+        {
+            debug("Couldn't build the interpolant.");
+            return;
+        }
+
 		/// Loop over samples generating interpolated geometry and add them to Mantra
 		for (int i =0; i <= mynsamples; i++)
 		{
@@ -544,7 +527,6 @@ VRAY_IGeometry::render()
 	}
 	
 	closeObject();
-
 }
 
 #endif

@@ -47,9 +47,6 @@ public:
         {
             imin = SYSmax(k-d,0);
             imax = (k >= (n-d)) ? n-(d+1): k;
-            //imax = k; if (k>=n-d) imax = n - (d+1);
-            //cout << imin << " " << imax << endl; 
-            //temp = imin & 1 ? -1.0 : 1.0;
     
             /// Summ:
             for(int i=imin; i<=imax; i++)

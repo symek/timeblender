@@ -148,14 +148,13 @@ public:
 			    const GU_Detail * next);
 
 	void  build(const GU_Detail * prev2,
-			    const GU_Detail * prev,  
-			    const GU_Detail * curr, 
-			    const GU_Detail * next,
-				const GU_Detail * next2);
+	            const GU_Detail * prev,
+	            const GU_Detail * curr, 
+	            const GU_Detail * next,
+	            const GU_Detail * next2);
 
 
-	void interpolate(const float,
-					  GU_Detail * const) const;
+	void interpolate(const float, GU_Detail * const) const;
 
 	int getitype() const { return itype; };
 	bool isValid() const { return valid; };
@@ -163,8 +162,7 @@ public:
 
 private:
 
-	inline void evaluate(const int *x, int *y, 
-                          float *u, float *w) const;
+	inline void evaluate(const int *x, int *y, float *u, float *w) const;
 
 	/// Get to the specific interpolant.
 	const UT_Spline * getInterpolant(int i)
@@ -254,31 +252,28 @@ private:
 class VRAY_IGeometry: public VRAY_Procedural 
 {
 public:
-		 VRAY_IGeometry();
+        VRAY_IGeometry();
 virtual ~VRAY_IGeometry();
 
-	virtual const char *getClassName();
-	virtual int         initialize(const UT_BoundingBox *);
-	virtual void        getBoundingBox(UT_BoundingBox &box);
-	virtual void        render();
+    virtual const char *getClassName();
+    virtual int         initialize(const UT_BoundingBox *);
+    virtual void        getBoundingBox(UT_BoundingBox &box);
+    virtual void        render();
 
 private:
-	int        saveGeometry(const GU_Detail *,
-                                const UT_String *);
+	int saveGeometry(const GU_Detail *, const UT_String *);
 
-	UT_BoundingBox  myBox;
-
-	int             mydointerpolate;
-	int             mythreeknots;
-	fpreal          myshutter;
-	int             mynsamples;
-	int             myitype;
-
-	UT_String       myfile;
-	UT_String       myprefile;
-	UT_String       myprefile2;
-	UT_String       mynextfile;
-	UT_String       mynextfile2;
+    UT_BoundingBox  myBox;
+    int             mydointerpolate;
+    int             mythreeknots;
+    fpreal          myshutter;
+    int             mynsamples;
+    int             myitype;
+    UT_String       myfile;
+    UT_String       myprefile;
+    UT_String       myprefile2;
+    UT_String       mynextfile;
+    UT_String       mynextfile2;
 };
 
 }//End of timeblender namescape
