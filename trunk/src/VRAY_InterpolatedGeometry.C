@@ -40,10 +40,11 @@
 	
 */
 
-#ifndef __VRAY_InterpolatedGeometry_C__
-#define __VRAY_InterpolatedGeometry_C__
+//#ifndef __VRAY_InterpolatedGeometry_C__
+//#define __VRAY_InterpolatedGeometry_C__
 
 #include "VRAY_InterpolatedGeometry.h"
+#include "TB_PointMatch.h"
 
 #if DEBUG==1
 #define DEBUG
@@ -144,7 +145,9 @@ BRInterpolant::build(const GU_Detail * prev, const GU_Detail * curr, const GU_De
     int i = 0;
     const GEO_Point  *currppt, *prevppt, *nextppt;
     float idx[] = {0.0f, 0.5f, 1.0f};
-    float val[] = {0.0, 0.0, 0.0};	
+    float val[] = {0.0, 0.0, 0.0};
+    
+    /// Build correspondence:	
 
 	/// BRI supports only floats type.
 	/// TODO: Wy could try multithreading on this loop.
@@ -358,7 +361,7 @@ VRAY_IGeometry::initialize(const UT_BoundingBox *box)
 	/// TODO: Bounds should be enlarged with all gdps involved
 	/// in interpolation:
 	if (!box)
-    {
+	{
         debug("Warning! No bounding box specified. Computing it from a sources.");
         GU_Detail gdp;
         UT_BoundingBox * gdpbox = new UT_BoundingBox();
@@ -435,6 +438,11 @@ VRAY_IGeometry::render()
 		
     /// Main part goes here:
     /// TODO: assign shaders
+    #ifdef DEBUG 
+        TB_PointMatch * matcher = new TB_PointMatch();
+        matcher->initialize((const GU_Detail *)gdp);
+        cout << "TB_PointMatch entries: "<< matcher->entries() << endl; 
+    #endif
     openGeometryObject();
     changeSetting("surface", "plastic diff (1.0 0.8 0.8)", "object");
 
@@ -528,5 +536,4 @@ VRAY_IGeometry::render()
 	
 	closeObject();
 }
-
-#endif
+//#endif

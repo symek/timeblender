@@ -13,8 +13,8 @@
 #include <UT/UT_Spline.h>
 #include <UT/UT_Color.h>
 #include <SYS/SYS_Math.h>
-
 #include <vector>
+//#include "TB_PointMatch.h"
 
 
 
@@ -30,9 +30,16 @@ typedef enum {
 	INTER_CUBIC,
 	INTER_BARYCENTRIC,  /*Barycentric Rational Interpolation*/          
 
-} IG_INTER_TYPES;
+} TB_INTER_TYPES;
 
-
+/// Types for building geometry correspondence
+typedef enum {
+    CORR_POINT_NUMBER,
+    CORR_POINT_ID,
+    CORR_UV_SPACE,
+    CORR_SPHERICAL_SPACE,
+    CORR_TEATRA_MATCH,
+} TB_CORR_TYPES;
 
 ////-------- Utility functions. ------------
 
@@ -81,7 +88,8 @@ class GeoInterpolant
 {
 public:
 	/// Call it in a default constractor.
-	virtual int   initialize(int size, int type) = 0;
+	virtual int   initialize(int size, int typem) = 0;
+	virtual int   initialize(int size, int typem, int correspond = CORR_POINT_NUMBER);
 
 	/// Build structures necessery to do work.
 	virtual void  build(const GU_Detail * prev, 
@@ -98,6 +106,7 @@ public:
 	/// This interpolates previously built stractures, and modifies
 	/// GU_Detail accoring to it.
 	virtual void interpolate(const float, GU_Detail  * const) const = 0;
+	        void setCorrespond(int correspond) {mycorrespond = correspond;};
 
 	/// Object details.
 	/// TODO: implement getMemoryUsage()
@@ -114,6 +123,7 @@ private:
      bool valid;
      bool alloc;
      int  itype;
+     int  mycorrespond;
 };
 
 class SplineInterpolant : public GeoInterpolant
@@ -135,7 +145,8 @@ public:
 	/// Allocate memory, set flags.
 	int initialize(int size, int type)
 	{
-		interpolants.resize(size);  
+		interpolants.resize(size);
+		mycorrespond       = CORR_POINT_NUMBER;  
 		itype              = type;
 		mySize             = size;
 		valid              = false;
@@ -174,6 +185,7 @@ private:
 	bool valid;
 	int  itype;
 	bool alloc;
+	int mycorrespond;  
 
 	/// Vector of 3-dim interpolants.
 	vector <UT_Spline  *>  interpolants;
@@ -208,10 +220,11 @@ public:
 		interpolants.at(1) = &Y;
 		interpolants.at(2) = &Z;
 		
-		itype  = INTER_BARYCENTRIC;
-		mySize = size;
-		valid  = false;
-		alloc  = true;
+		itype        = INTER_BARYCENTRIC;
+		mycorrespond = CORR_POINT_NUMBER;
+		mySize     = size;
+		valid      = false;
+		alloc      = true;
 		return 1;
 	}
 
@@ -227,6 +240,7 @@ public:
 
 	
 	void interpolate(const float, GU_Detail * const) const;
+	void setCorrespond(int correspond);
 
 	int getitype() const { return itype; };
 	bool isValid() const { return valid; };
@@ -237,6 +251,7 @@ private:
 	bool valid;
 	int  itype;
 	bool alloc;
+	int mycorrespond;
 
 	/// 3 vectors of 1-dim interpolants.
 	vector <TB_Bri *> X;
@@ -275,6 +290,8 @@ private:
     UT_String       mynextfile;
     UT_String       mynextfile2;
 };
+
+
 
 }//End of timeblender namescape
 
