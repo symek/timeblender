@@ -19,6 +19,7 @@ compareSplayNodes(const void * a, const void * b)
     }
 }
 
+/// TODO: Profile memory in this!
 int 
 TB_PointMatch::initialize(const GU_Detail * gdp, int correspond = 0)
 {
@@ -41,30 +42,14 @@ TB_PointMatch::initialize(const GU_Detail * gdp, int correspond = 0)
 	return 1;
 }
 
-TB_SplayNode * TB_PointMatch::find(int id)
+GEO_Point * TB_PointMatch::find(int id)
 {
-    if (alloc)
-    {
-        TB_SplayNode node = TB_SplayNode(id);
-        return (TB_SplayNode *) tree->find(&node);
-    }
-}
-
-GEO_Point * TB_PointMatch::findPoint(int id)
-{
-    if (alloc)
-    {
-        TB_SplayNode node = TB_SplayNode(id);
-        return ((GEO_Point *)tree->find(&node)->ppt);
-    }
-}
-
-GEO_Point * TB_PointMatch::get(int id)
-{
-    if (detail)
-    {
-        return detail->points()[id];
-    }
-
+    /// g++ complains that we are taking an address of a temporary
+    /// object here, but it shouldn't hurt here imho.
+    TB_SplayNode * match = (TB_SplayNode *) tree->find(&TB_SplayNode(id));
+    if (!match)
+        return NULL;
+    GEO_Point * ppt = (GEO_Point*) match->ppt;
+    return ppt;
 }
 

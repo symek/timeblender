@@ -20,30 +20,30 @@
 	skk.
 
 	TODO: 
-	- Fix Bounds!
+	- Fix Bounds! (done).
 	- Materials assigment (limited).
 	- Own implementation of BRI (done).
 	- UT_Splines (native HDK) interpolation (done).
 	- Five knots interpolation (done).
+	
+	- Interpolation of non-constant topological geometry 
+        -- Via attribute match (particles ID) (in progress).
+		-- Neigbhourhood search. 
+		
 	- Shutter retimer.
 		-- Extrapolate motion.
 		-- Nonlinear shutter retime a'la Pixar (?)
 	- Heavy geometry tests (speed and memory).
-	- Threading. (HDK native method).
-	- Interpolation of non-constant topological geometry 
-		-- Via attribute match (particles ID)
-		-- Neigbhourhood search. 
 	
+	- Threading. (HDK native method).
 	- Interpolate attributes: N, uv? 
     - threading (native HDK point loops)
 		-- we need thread-safe vector for that.
 	
 */
 
-//#ifndef __VRAY_InterpolatedGeometry_C__
-//#define __VRAY_InterpolatedGeometry_C__
-
 #include "VRAY_InterpolatedGeometry.h"
+#include "TB_GeoInterpolants.h"
 #include "TB_PointMatch.h"
 
 #if DEBUG==1
@@ -51,225 +51,6 @@
 #endif
 
 using namespace TimeBlender;
-
-float TB_Bri::evaluate(float u) const
-{
-    if (!alloc) return 0.0f;
-    float temp, p, q;
-    p = 0.0; q = 0.0;
-    for (int i=0; i<size; i++)
-    {
-        float t = u-idx[i];
-        if ( t == 0.0)
-        {
-            /// we are exacty on index:
-            return val[i];
-        }
-        else
-        {
-            temp = wei[i] / t;
-            p   += val[i]*temp;
-            q   += temp;
-        }
-    }
-    return p/q;
-}
-
-int
-TB_Bri::initialize(float *ii, float *x, int n, int d)
-{
-    /// initialize and compute weights.
-    size = n; order=d;
-    idx  = new float[n];
-    val  = new float[n];
-    wei  = new float[n];
-    
-    /// copy arrays:
-    for (int i=0; i<n; i++)
-    {
-        idx[i] = ii[i];
-        val[i] = x[i];
-    }
-
-    /// Compute weights:
-    int imax, imin;
-    float summ, temp;
-    for (int k=0; k<n; k++)
-    {
-        imin = SYSmax(k-d, 0);
-        imax = (k >= (n-d)) ? n-(d+1): k;
-        temp = imin & 1 ? -1.0: 1.0;
-        summ = 0.0;
-        
-        /// Summ:
-        for(int i=imin; i<=imax; i++)
-        {
-            int   jmax = SYSmin(i+d, n-1);
-            float term = 1.0;
-            for (int j=i; j<=jmax; j++)
-            {
-                if(j == k) continue; 
-                term *= (idx[k] - idx[j]);
-            }
-            term  = temp/term;
-            temp  =-temp;
-            summ += term; 
-        }
-        /// Weights computed:
-        wei[k] = summ;
-    }
-    return 1;
-}
-
-void
-BRInterpolant::interpolate(float u, GU_Detail * const gdp) const
-{
-
-	GEO_Point * ppt;
-	int   i = 0;
-	float x = 0; float y = 0; float z = 0;
-	
-	FOR_ALL_GPOINTS(gdp, ppt)
-	{
-		x = interpolants.at(0)->at(i)->evaluate(u);
-		y = interpolants.at(1)->at(i)->evaluate(u);
-		z = interpolants.at(2)->at(i)->evaluate(u);
-	    ppt->setPos(x, y, z);
-		i++;
-	}
-}
-
-void
-BRInterpolant::build(const GU_Detail * prev, const GU_Detail * curr, const GU_Detail * next)
-{
-    int i = 0;
-    const GEO_Point  *currppt, *prevppt, *nextppt;
-    float idx[] = {0.0f, 0.5f, 1.0f};
-    float val[] = {0.0, 0.0, 0.0};
-    
-    /// Build correspondence:	
-
-	/// BRI supports only floats type.
-	/// TODO: Wy could try multithreading on this loop.
-	FOR_ALL_GPOINTS(curr, currppt)
-	{   
-		prevppt = prev->points()[i];
-		nextppt = next->points()[i];
-
-		for (int j = 0; j < 3; j++)
-		{
-		    val[0] = prevppt->getPos()[j];
-		    val[1] = currppt->getPos()[j];
-		    val[2] = nextppt->getPos()[j];
-			TB_Bri * bri =  new TB_Bri(idx, val, 3, 2);
-			interpolants.at(j)->at(i) = bri;
-		}
-		i++;
-	}
-    this->valid = true;	
-}
-
-void
-BRInterpolant::build(const GU_Detail * prev2,
-                     const GU_Detail * prev, 
-					 const GU_Detail * curr, 
-					 const GU_Detail * next,
-                     const GU_Detail * next2)
-                     
-{
-    int i = 0;
-    const GEO_Point  *currppt, *prevppt, *nextppt,  *prevppt2, *nextppt2;
-    float idx[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-    float val[] = {0.0, 0.0, 0.0, 0.0, 0.0};	
-
-	/// BRI supports only floats type.
-	/// TODO: Wy could try multithreading on this loop.
-	FOR_ALL_GPOINTS(curr, currppt)
-	{   
-		prevppt = prev->points()[i];
-		nextppt = next->points()[i];
-		prevppt2 = prev2->points()[i];
-		nextppt2 = next2->points()[i];
-
-		for (int j = 0; j < 3; j++)
-		{
-		    val[0] = prevppt2->getPos()[j];
-		    val[1] = prevppt->getPos()[j];
-		    val[2] = currppt->getPos()[j];
-		    val[3] = nextppt->getPos()[j];
-		    val[4] = nextppt2->getPos()[j];
-			TB_Bri * bri =  new TB_Bri(idx, val, 5, 4);
-			interpolants.at(j)->at(i) = bri;
-		}
-		i++;
-	}
-    this->valid = true;	
-}
-
-void
-SplineInterpolant::interpolate(float u, GU_Detail * const gdp) const
-{
-	GEO_Point * ppt;
-	int   i = 0;
-	fpreal32 x[] = {0.0f, 0.0f, 0.0f};
-	
-	FOR_ALL_GPOINTS(gdp, ppt)
-	{
-		interpolants.at(i)->evaluate(u, x, 3, (UT_ColorType)2);
-	    ppt->setPos(x[0],x[1],x[2]);
-		i++;
-	}
-}
-
-void
-SplineInterpolant::build(const GU_Detail * prev, 
-					     const GU_Detail * curr, 
-					     const GU_Detail * next)
-
-{
-	/// Call 5 knots builder:
-	build(prev, prev, curr, next, next);
-
-}
-
-void
-SplineInterpolant::build(const GU_Detail * prev2,
-                         const GU_Detail * prev, 
-					     const GU_Detail * curr, 
-					     const GU_Detail * next,
-                         const GU_Detail * next2)
-{
-	UT_Spline  *spline;
-	fpreal32 v1[3]; 
-	int i = 0;
-	const GEO_Point * currppt;
-	const GU_Detail * gdps[] = {prev2, prev, curr, next, next2};
-
-	/// TODO: Wy could try multithreading on this loop.
-	FOR_ALL_GPOINTS(curr, currppt)
-	{
-		spline  = new UT_Spline(); 
-		spline->setGlobalBasis((UT_SPLINE_BASIS)itype);
-		spline->setSize(5, 3);
-
-		for (int j=0; j<5;j++)
-		{
-			v1  = {gdps[j]->points()[i]->getPos().x(),
-                   gdps[j]->points()[i]->getPos().y(),
-                   gdps[j]->points()[i]->getPos().z()};
-
-			spline->setValue(j, v1, 3);
-		}
-
-		interpolants.at(i) = spline;	
-		
-		i++;
-	} 
-	/// Interpolant is valid for evaluation.
-	/// This is quite optimistic assumption, 
-	/// as no checkes were performed.
-	this->valid = true;
-}
 
 // Arguments:
 static VRAY_ProceduralArg theArgs[] =
@@ -284,7 +65,7 @@ static VRAY_ProceduralArg theArgs[] =
     VRAY_ProceduralArg("nsamples",     "int",   "6"),
     VRAY_ProceduralArg("itype",        "int",   "4"),
     VRAY_ProceduralArg("shutter",      "real",  "1"),
-    VRAY_ProceduralArg("velocityblur", "int",   "0"),
+    VRAY_ProceduralArg("matchbyid",    "int",   "0"),
     VRAY_ProceduralArg("shutterretime", "int", "0"),
     /// These two are spare, as proc. get bounds in initialize(*box),
     /// Otherwise they need to be computed by us.
@@ -345,6 +126,8 @@ VRAY_IGeometry::initialize(const UT_BoundingBox *box)
         mynsamples = 6;
     if (!import("itype", &myitype, 1))
         myitype = 4;
+    if (!import("matchbyid", &mymatchbyid, 1))
+        mymatchbyid = 0;
 
     /// Time samples:
 	if (!import("prefile", myprefile))  cout << "No pre sample to interpolate." << endl;
@@ -440,8 +223,13 @@ VRAY_IGeometry::render()
     /// TODO: assign shaders
     #ifdef DEBUG 
         TB_PointMatch * matcher = new TB_PointMatch();
-        matcher->initialize((const GU_Detail *)gdp);
-        cout << "TB_PointMatch entries: "<< matcher->entries() << endl; 
+        matcher->initialize((const GU_Detail *)gdp, 0);
+        cout << "TB_PointMatch entries: "<< matcher->entries() << endl;
+        GEO_Point * ppt = matcher->find(10);
+        if (ppt)
+            cout << ppt->getPos()[0] << ppt->getPos()[1] << ppt->getPos()[2] << endl;
+        else
+            cout << "No point!" << endl;
     #endif
     openGeometryObject();
     changeSetting("surface", "plastic diff (1.0 0.8 0.8)", "object");
@@ -453,6 +241,7 @@ VRAY_IGeometry::render()
     if (mydointerpolate)	
     { 
         GeoInterpolant * gi;
+        TB_PointMatch  * prevmatch, * nextmatch;
         static const fpreal min = 0.0, max = 1.0, nmin = 0.5; 
 		fpreal nmax = 1.0;
 		
@@ -465,25 +254,45 @@ VRAY_IGeometry::render()
 		/// Allocate interpolant for npoints, and choose type:
         if (myitype	== INTER_BARYCENTRIC)
         {
-            gi = new BRInterpolant(gdp->points().entries());
-		}
+           gi = new BRInterpolant(gdp->points().entries());
+        }
         else
         {
-            gi = new SplineInterpolant(gdp->points().entries(), myitype);
+           gi = new SplineInterpolant(gdp->points().entries(), myitype);
         }
+        
+        /// If not allocated...
         if (!gi->isAlloc())
         {
             debug("Couldn't allocate storate for the interpolant.");
             return; 
         }
 
-		/// Build the interpolant from provided gdps
-		/// with 3 or 5 time samples:
-        if (mythreeknots) 
-            gi->build(gdpp, gdp, gdpn);
-        else 
+		/// Build the interpolant from provided gdps (3 or 5). 
+        if (mythreeknots)
+        {
+            /// If "id" has been found, build the interpolant based on TB_PointMatch:
+            if (mymatchbyid && gdp->getPointAttribute("id").isAttributeValid())
+            {
+                /// TODO: Properly handle exeption: "no id attrribute found".
+                prevmatch = new TB_PointMatch(gdpp, CORR_POINT_ID);
+                nextmatch = new TB_PointMatch(gdpn, CORR_POINT_ID);
+                gi->build(prevmatch, (const GU_Detail *) gdp, nextmatch);
+            }
+            else
+            {
+                /// or use plain GU_Details':
+                gi->build(gdpp, gdp, gdpn);
+            }
+        }
+        else
+        {
+            /// Currently this doesn't work.
+            if (mymatchbyid) debug("5 knobs interpolation doesn't work with match by id."); 
             gi->build(gdpp2, gdpp, gdp, gdpn, gdpn2);
-
+        }
+        
+        /// Is interpolator valid?
         if (!gi->isValid())
         {
             debug("Couldn't build the interpolant.");
@@ -536,4 +345,3 @@ VRAY_IGeometry::render()
 	
 	closeObject();
 }
-//#endif
