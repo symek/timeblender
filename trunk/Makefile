@@ -3,7 +3,7 @@
 
     # List of C++ source files to build.
     # SOP_Main.C registers the operators and handles the DSO-specifics.
-    SOURCES = ./src/VRAY_InterpolatedGeometry.C ./src/TB_PointMatch.C
+    SOURCES = ./src/VRAY_InterpolatedGeometry.C ./src/TB_PointMatch.C ./src/TB_GeoInterpolants.C
 
 
     # Use the highest optimization level.
@@ -20,8 +20,6 @@
     # Additional libraries.
     #LIBS = ./src/TB_PointMatch.o
 	
-	
-
     # Set the plugin library name.
     DSONAME = VRAY_InterpolatedGeometry.so
 
