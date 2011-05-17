@@ -7,6 +7,6 @@
 
   It took me a while to find a hypothetical explanation of why I feel ok making this assumption. Here it goes:
 
-  Sampling theorem guarantees in our case, that any motion recorded (sampled) by evenly spaced camera shutter will have no "events" happening below Nyquist limit, which is 1/fps. In other words, movement of an objects animated inside Houdini, and recorded once per frame in ifd/bgeo, *must* have a constant acceleration from frame to frame. In opposite case, there would be changes of underlaying function not captured by our samples, what seems to violate our premise of bandwidth limited functions, like those produced by shutter timer of Houdini from animated objects. 
+  Sampling theorem guarantees in our case, that any motion recorded (sampled) by evenly spaced camera shutter will have no "events" happening below Nyquist limit, which is 1/2*fps. In other words, movement of an objects animated inside Houdini, and recorded once per frame in ifd/bgeo, *must* have a constant acceleration from frame to frame. In opposite case, there would be changes of underlaying function not captured by our samples, what seems to violate our premise of bandwidth limited functions, like those produced by shutter timer of Houdini from animated objects. 
 
 Sounds good?
