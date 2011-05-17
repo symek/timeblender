@@ -1,5 +1,5 @@
 ==How smooth is smooth enough?==
-  I started my survey of a geometry interpolation by examining available solutions. Obviously I tried with spline primitives which exist in virtually any 3d application out there. Quite soon I realized there is something wrong about them. They are not smooth enough. Splines interpolations tend to have bumps and valleys along the line. They were design to fit functions with variable tensions on knots. Fair enough, but not for our purpose.  
+  I started my survey of a geometry interpolation by examining available solutions. Obviously I tried with spline primitives which exist in virtually any 3d application out there. Quite soon I realized there is something wrong about them. They are not smooth enough. Splines interpolations tend to have bumps and valleys along with  flattened periods. They were design to fit functions with controllable tensions on knots. Fair enough, but not for our purpose.  
  
   Intuitively we need a spline with some reasonable, constant curvature. After thinking about it a little, I realized what it actually means. We look for an interpolation function which has a constant 2nd derivative. Without further considerations I assumed this is a correct premise. I wouldn't be able to prove it, but it doesn't prove anything...
  
