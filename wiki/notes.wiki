@@ -1,0 +1,6 @@
+=Research and implementation nodes.=
+
+==Desired smoothness==
+This was my intuition from the beginning, which I assumed correct for choosing interpolation function. I still cannot prove it, but it seems to be fine..
+ 
+Our interpolation function should have constant 2nd derivatives, because sampling theorem guarantees us, that any motion recored (sampled) by evenly spaced camera shutter will have no details happening beyond Nyquist limit. In other words, objects animated inside Houdini, and recorded once per frame in ifd/bgeo, *must* move with constant acceleration from frame to frame. 
