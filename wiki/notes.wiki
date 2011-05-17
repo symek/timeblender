@@ -1,5 +1,3 @@
-=Various implementation nodes.=
-
 ==Desired smoothness==
 This was my intuition from the beginning, which I assumed correct for choosing interpolation function. I still cannot prove it, but it seems to be fine..
  
