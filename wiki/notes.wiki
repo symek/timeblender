@@ -1,11 +1,11 @@
 ==How smooth is smooth enough?==
-  *I started my survey by examining available solutions. Obviously I tried with spline primitives which exist in virtually any 3d application out there. Quite soon I realized there is something wrong about them. They are not smooth enough. Splines interpolations tend to have bumps and valleys along the line. They were design to fit functions with variable tensions on knots. Fair enough, but not for our purpose.  
+  * I started my survey by examining available solutions. Obviously I tried with spline primitives which exist in virtually any 3d application out there. Quite soon I realized there is something wrong about them. They are not smooth enough. Splines interpolations tend to have bumps and valleys along the line. They were design to fit functions with variable tensions on knots. Fair enough, but not for our purpose.  
  
-  *Intuitively we need a spline with some reasonable, constant curvature. After thinking about it a little, I realized what it actually means. We look for an interpolation function which has constant 2nd derivative. I assumed this was a correct premise without further considerations. I wouldn't be able to prove it, but it doesn't prove anything...
+  * Intuitively we need a spline with some reasonable, constant curvature. After thinking about it a little, I realized what it actually means. We look for an interpolation function which has constant 2nd derivative. I assumed this was a correct premise without further considerations. I wouldn't be able to prove it, but it doesn't prove anything...
  
-  *Generally speaking splines are not those. Why do we actually need 2nd derivatives constant? Simply because such function is smooth enough to look like an approximation of predictably moving object. The question arises if this is not a unjustified simplification?  
+  * Generally speaking splines are not those. Why do we actually need 2nd derivatives constant? Simply because such function is smooth enough to look like an approximation of predictably moving object. The question arises if this is not a unjustified simplification?  
 
-  *It took me a while to find a hypothetical explanation of why I feel ok making this simplifying assumption. Here it goes:
+  * It took me a while to find a hypothetical explanation of why I feel ok making this simplifying assumption. Here it goes:
 
 Sampling theorem guarantees in our case, that any motion recorded (sampled) by evenly spaced camera shutter will have no "events" happening below Nyquist limit, which is 1/fps. In other words, movement of an objects animated inside Houdini, and recorded once per frame in ifd/bgeo, *must* have a constant acceleration from frame to frame. In opposite case, there would be changes of underlaying function not captured by our samples, what seems to violate our premise of bandwidth limited functions, like those produced by shutter timer of Houdini from animated objects. 
 
