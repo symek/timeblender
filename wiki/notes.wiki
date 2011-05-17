@@ -3,7 +3,7 @@
  
   Intuitively we need a spline with some reasonable, constant curvature. After thinking about it a little, I realized what it actually means. We look for an interpolation function which has a constant 2nd derivative. Without further considerations I assumed this is a correct premise. I wouldn't be able to prove it, but it doesn't prove anything...
  
-  Generally speaking splines are not those, but why do I liked these constant 2nd derivatives based solely on how they look? I suppose because such function is smooth enough to look like an approximation of predictably moving object. The questions remain what does it actually mean and if this is not an unjustified simplification?  
+  Generally speaking splines are not those, but why do I liked these constant 2nd derivatives based solely on how they might look? I suppose because such function is smooth enough to look like an approximation of predictably moving object. The questions remain what does it actually mean and if this is not an unjustified simplification?  
 
   It took me a while to find a hypothetical explanation of why I feel ok making this assumption. Here it goes:
 
