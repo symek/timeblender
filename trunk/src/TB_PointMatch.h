@@ -1,6 +1,7 @@
 #ifndef __TB_PointMatch_h__
 #define __TB_PointMatch_h__
 
+#include <map>
 #include <GU/GU_Detail.h>
 #include <UT/UT_SplayTree.h>
 #include <GEO/GEO_Point.h>
@@ -35,6 +36,9 @@ typedef enum {
     CORR_TEATRA_MATCH,
 } TB_CORR_TYPES;
 
+/// Node typedef for STL map (red/black tree):
+typedef std::map<int, GEO_Point*> Tree;
+
 /// TODO: This should be plain structre?
 class TB_SplayNode 
 {
@@ -46,9 +50,12 @@ public:
     const GEO_Point * ppt;
 };
 
-/// TB_PointMatch doesn't inheret after UT_SplayTree because
-/// I really don't know where this class will go later on. 
-/// Perhpas this will be fixed. 
+/// I'm removing Splay tree from here, since they're not optimial for
+/// this kind of queries (with no coherence between sequantial searches)
+/// and additionally not thread safe at access (important as we'd like to expose 
+/// point match in VEX). Generally speaking using Splay Tree here had
+/// no sense at all.
+
 class TB_PointMatch
 {
 public:
@@ -59,29 +66,29 @@ public:
     ~TB_PointMatch() { delete tree;}
     
     /// Alloc wiht parameters:
-    TB_PointMatch(const GU_Detail * gdp, int correspond)
+    TB_PointMatch(GU_Detail * gdp, int correspond)
     {
         if (!initialize(gdp, correspond)) alloc = false;
     }
     /// Initilialize splay tree:
-    int initialize(const GU_Detail *, int correspond);
+    int initialize(GU_Detail *, int correspond);
     
     /// Find corresponding point based on provided ID,
     /// and assing finding to GEO_Point *.
     GEO_Point * find(int d);
     
     /// Get to the raw tree.
-    UT_SplayTree * getTree() {return  tree;}
+    Tree * getTree() {return  tree;}
     
     /// Tree entries == npoints.
-    int entries() {return tree->entries();}
+    int entries() const {return (int)tree->size();}
     
     /// Are we ready for searach.
     bool isAlloc() {return alloc;}
  
 private:
-    bool alloc;
-    UT_SplayTree    * tree;
+    bool  alloc;
+          Tree      * tree;
     const GU_Detail * detail;
 };
 } // End of Timeblender namespace
