@@ -49,6 +49,7 @@ TB_Bri::initialize(float *ii, float *x, int n, int d)
         /// Weights computed:
         wei[k] = summ;
     }
+    alloc =1;
     return 1;
 }
 
