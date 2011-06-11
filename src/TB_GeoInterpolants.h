@@ -1,12 +1,14 @@
 #ifndef __TB_GeoInterpolants_h__
 #define __TB_GeoInterpolants_h__
 
+#include <vector>
+
 #include <GEO/GEO_Point.h>
 #include <GU/GU_Detail.h>
 #include <GB/GB_Macros.h>
 #include <UT/UT_Spline.h>
 #include <UT/UT_Color.h>
-#include <vector>
+
 #include "TB_PointMatch.h"
 
 namespace TimeBlender
@@ -88,14 +90,22 @@ private:
 class TB_Bri
 {
 public:
+    /// Needs initialisation:
+    TB_Bri() {};
     /// ii: index array; x: value array; n: arrays' size; 
-    /// d: interpolation order < n-1.
+    /// d: interpolation order <= n-1.
     TB_Bri(float *ii, float *x, int n, int d)
     { 
         alloc = initialize(ii, x, n, d); 
     }
     
-    ~TB_Bri();
+    ~TB_Bri() 
+    {
+        delete [] idx;
+        delete [] val;
+        delete [] wei;
+        cout << "idx, val, wei deleted" << endl; 
+    }
     
     int initialize(float *ii, float *x, int n, int d);
     
@@ -143,7 +153,7 @@ public:
 		interpolants.at(1) = &Y;
 		interpolants.at(2) = &Z;
 		
-		itype        = INTER_BARYCENTRIC;
+		itype      = INTER_BARYCENTRIC;
 		mySize     = size;
 		valid      = false;
 		alloc      = true;
