@@ -1,9 +1,12 @@
 /*
+VEX implementation of BRI:
 Barycentric Rational Interpolation with
 no Poles and High Rates of Approximation,
 by Michael S. Floater and Kai Hormann
 
-TB_Bri is based on "Numerical Recipes" (third edition).
+TB_Bri is based on "Numerical Recipes" 
+(third edition).
+skk.
 */
 
 #include <VEX/VEX_VexOp.h>
@@ -31,7 +34,7 @@ public:
     TB_Bri * bri;
 };
 
-/// ... and pointer
+/// ... and the pointer
 static PersistBRI * persistBRI = NULL;
 
 /// Init function:
@@ -65,11 +68,11 @@ brinterpol(int narg, void *argv[], void *data)
 	// Repack arguments:
 	float *out                         = (float *) argv[0];
 	const UT_RefArray<fpreal32> *knots = (const UT_RefArray<fpreal32> *) argv[1];
-	float *u                     = (float *) argv[2];
-	int   *order                 = (int   *) argv[3];
-	PersistBRI * persistbri      = (PersistBRI *) data;
-    TB_Bri     * bri             = persistbri->bri;
-    int alloc                    = 0;
+	float *u                           = (float *) argv[2];
+	int   *order                       = (int   *) argv[3];
+	PersistBRI * persistbri            = (PersistBRI *) data;
+    TB_Bri     * bri                   = persistbri->bri;
+    int alloc                          = 0;
     
     if (persistbri->counter)
     {

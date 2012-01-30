@@ -19,6 +19,7 @@ TB_PointMatch::initialize(GU_Detail * gdp, int correspond = 0)
 	    handle.setElement(ppt);
 	    id = handle.getI();
 	    tree->insert(it, std::pair<int, GEO_Point*>(id, ppt));
+	    
 	}
 	
 	detail = gdp;
