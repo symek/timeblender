@@ -1,5 +1,5 @@
-#ifndef __VRAY_InterpolatedGeometry_h__
-#define __VRAY_InterpolatedGeometry_h__
+#ifndef __VRAY_TimeBlender_h__
+#define __VRAY_TimeBlender_h__
 
 #include <VRAY/VRAY_Procedural.h>
 #include <UT/UT_DSOVersion.h>
@@ -17,11 +17,11 @@
 namespace TimeBlender
 {
 /// VRAY_IGeometry, the main worker.
-class VRAY_IGeometry: public VRAY_Procedural 
+class VRAY_TimeBlender: public VRAY_Procedural 
 {
 public:
-        VRAY_IGeometry();
-virtual ~VRAY_IGeometry();
+        VRAY_TimeBlender();
+virtual ~VRAY_TimeBlender();
 
     virtual const char *getClassName();
     virtual int         initialize(const UT_BoundingBox *);

@@ -1,5 +1,5 @@
 /* 
-	Timeblender::VRAY_InterpolatedGeometry v.01, 11.05.2011, 
+	Timeblender::VRAY_TimeBlender v.0.1.0, 11.05.2011, 
 
 	This is a VRAY Procedural DSO which computes a series of interpolated geometry
 	from time samples at rendertime. Main reason for doing this is when we don't have
@@ -42,7 +42,7 @@
 	
 */
 
-#include "VRAY_InterpolatedGeometry.h"
+#include "VRAY_TimeBlender.h"
 #include "TB_GeoInterpolants.h"
 #include "TB_PointMatch.h"
 
@@ -78,7 +78,7 @@ static VRAY_ProceduralArg theArgs[] =
 VRAY_Procedural * 
 allocProcedural(const char *)
 {
-	return new VRAY_IGeometry();
+	return new VRAY_TimeBlender();
 }
 
 // Return argumentes
@@ -89,24 +89,24 @@ getProceduralArgs(const char *)
 }
 
 // Initialiser:
-VRAY_IGeometry::VRAY_IGeometry()
+VRAY_TimeBlender::VRAY_TimeBlender()
 {
 	myBox.initBounds(0,0,0);
 }
 
 //Deallocator:
-VRAY_IGeometry::~VRAY_IGeometry() {}
+VRAY_TimeBlender::~VRAY_TimeBlender() {}
 
 // Classname:
 const char * 
-VRAY_IGeometry::getClassName()
+VRAY_TimeBlender::getClassName()
 {
 	return "VRAY_IGeometry";
 }
 
 // Initilize and set bounds:
 int 
-VRAY_IGeometry::initialize(const UT_BoundingBox *box)
+VRAY_TimeBlender::initialize(const UT_BoundingBox *box)
 {
 	/// Main file:
 	if (!import("file", myfile)) 
@@ -161,14 +161,14 @@ VRAY_IGeometry::initialize(const UT_BoundingBox *box)
 
 // Return bounding box of a procedural:
 void
-VRAY_IGeometry::getBoundingBox(UT_BoundingBox &box)
+VRAY_TimeBlender::getBoundingBox(UT_BoundingBox &box)
 { 
 	box = myBox;
 }
 
 // Actual render:
 void 
-VRAY_IGeometry::render()
+VRAY_TimeBlender::render()
 {
 	GU_Detail *gdp, *gdpp, *gdpn, *gdpp2, *gdpn2;
 
