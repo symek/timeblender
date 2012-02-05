@@ -12,6 +12,8 @@
 #include <UT/UT_Spline.h>
 #include <UT/UT_Color.h>
 #include <SYS/SYS_Math.h>
+#include <UT/UT_WorkArgs.h>
+#include <UT/UT_PtrArray.h>
 #include <vector>
 
 namespace TimeBlender
@@ -32,17 +34,17 @@ private:
 	int saveGeometry(const GU_Detail *, const UT_String *);
 
     UT_BoundingBox  myBox;
-    int             mydointerpolate;
-    int             mythreeknots;
     fpreal          myshutter;
     int             mynsamples;
     int             myitype;
+    fpreal          myshutterstart;
+    fpreal          myshutterend;
+    int             mycurrentframe;
     int             mymatchbyid;
-    UT_String       myfile;
-    UT_String       myprefile;
-    UT_String       myprefile2;
-    UT_String       mynextfile;
-    UT_String       mynextfile2;
+    int             myfiles;
+    UT_String       shop_materialpath;
+    UT_String       myfilenamestring;
+    UT_WorkArgs     myfilenamelist;
 };
 }//End of timeblender namescape
 

@@ -76,108 +76,138 @@ float TB_Bri::evaluate(float u) const
     return p/q;
 }
 
-
-
-void
-BRInterpolant::build(const GU_Detail * prev, const GU_Detail * curr, const GU_Detail * next)
+int
+BRInterpolant::init_arrays(float *a, float *b, float *c, float *d, int n)
 {
-    int i = 0;
-    const GEO_Point  *currppt, *prevppt, *nextppt;
-    float idx[] = {0.0f, 0.5f, 1.0f};
-    float val[] = {0.0, 0.0, 0.0};
-
-	/// BRI currently supports only floats.
-	FOR_ALL_GPOINTS(curr, currppt)
-	{   
-		prevppt = prev->points()[i];
-		nextppt = next->points()[i];
-		
-		for (int j = 0; j < 3; j++)
-		{
-		    val[0] = prevppt->getPos()[j];
-		    val[1] = currppt->getPos()[j];
-		    val[2] = nextppt->getPos()[j];
-			TB_Bri * bri =  new TB_Bri(idx, val, 3, 2);
-			interpolants.at(j)->at(i) = bri;
-		}
-		i++;
-	}
-    this->valid = true;	
-}
-
-void
-BRInterpolant::build(const GU_Detail * prev2,
-                     const GU_Detail * prev, 
-					 const GU_Detail * curr, 
-					 const GU_Detail * next,
-                     const GU_Detail * next2)
-                     
-{
-    int i = 0;
-    const GEO_Point  *currppt, *prevppt, *nextppt,  *prevppt2, *nextppt2;
-    float idx[] = {0.0f, 0.25f, 0.5f, 0.75f, 1.0f};
-    float val[] = {0.0, 0.0, 0.0, 0.0, 0.0};
-
-	/// BRI currently supports only floats.
-	FOR_ALL_GPOINTS(curr, currppt)
-	{   
-		prevppt = prev->points()[i];
-		nextppt = next->points()[i];
-		prevppt2 = prev2->points()[i];
-		nextppt2 = next2->points()[i];
-
-		for (int j = 0; j < 3; j++)
-		{
-		    val[0] = prevppt2->getPos()[j];
-		    val[1] = prevppt->getPos()[j];
-		    val[2] = currppt->getPos()[j];
-		    val[3] = nextppt->getPos()[j];
-		    val[4] = nextppt2->getPos()[j];
-			TB_Bri * bri =  new TB_Bri(idx, val, 5, 4);
-			interpolants.at(j)->at(i) = bri;
-		}
-		i++;
-	}
-    this->valid = true;	
-}
-
-/// This version of build deals with TB_PointMatch.
-void
-BRInterpolant::build(TB_PointMatch * prev, const GU_Detail * curr, TB_PointMatch * next)
-{
-    int i = 0; int id;
-    const GEO_Point  *currppt;
-    GEO_Point *prevppt, *nextppt;
-    float idx[] = {0.0f, 0.5f, 1.0f};
-    float val[] = {0.0, 0.0, 0.0};
+    debug("Initing!");
+    a = new float[n]; 
+    b = new float[n];
+    c = new float[n];
+    d = new float[n];
     
-    /// Get id of a current point.
-    GEO_AttributeHandle handle = curr->getAttribute(GEO_POINT_DICT, "id");
-   
-	FOR_ALL_GPOINTS(curr, currppt)
-	{
-	    handle.setElement(currppt);
+    if (!a || !b || !c || !d) 
+        return 0;
+        
+    debug("after a or b or c");
+    
+    for (int i = 0; i < n; i++) 
+        a[i] = 1.0f*i/n;
+        
+    memset(b, 0.0, sizeof(float) * n);
+    memset(c, 0.0, sizeof(float) * n);
+    memset(d, 0.0, sizeof(float) * n);
+
+    debug("After memset");
+    return 1;
+}
+
+
+void
+BRInterpolant::build(UT_PtrArray<GU_Detail*> gdps, int current_frame)
+{
+    /// We work on current_gdp, taken from gdps.
+    GU_Detail *current_gdp, *gdp;
+    const GEO_Point  *ppt;
+    current_gdp = gdps(current_frame);
+    int entries = gdps.entries();
+    
+    /// Initialize index and values arrays:
+    float *idx, *valx, *valy, *valz;
+    idx  = new float[entries]; 
+    valx = new float[entries];
+    valy = new float[entries];
+    valz = new float[entries];
+    
+    for (int i = 0; i < entries; i++) 
+        idx[i] = 1.0f*i/entries;
+        
+    memset(valx, 0.0, sizeof(float) * entries);
+    memset(valy, 0.0, sizeof(float) * entries);
+    memset(valz, 0.0, sizeof(float) * entries);
+    
+    /// Loop over points -> then gdps. 
+    /// Is it goint to be much slower, than opposite?
+    for (int i=0; i < current_gdp->points().entries(); i++)
+    {   
+        for (int g = 0; g < entries; g++)
+        {
+            gdp = gdps(g);
+            // FIXME: This stays valid for constant point number, add exception.
+            ppt = gdp->points()(i);
+	        valx[g] = ppt->getPos().x();
+		    valy[g] = ppt->getPos().y();
+		    valz[g] = ppt->getPos().z(); 
+	     }
+	    /// Three splines are created, values copied, and assigned to 'this':
+        TB_Bri * brix =  new TB_Bri(idx, valx, entries, entries-1);
+        TB_Bri * briy =  new TB_Bri(idx, valy, entries, entries-1);
+        TB_Bri * briz =  new TB_Bri(idx, valz, entries, entries-1);
+        interpolants.at(0)->at(i) = brix;
+        interpolants.at(1)->at(i) = briy;
+        interpolants.at(2)->at(i) = briz;
+    }
+    delete idx; 
+    delete valx; 
+    delete valy;
+    delete valz;
+    valid = true;	
+}
+
+
+void 
+BRInterpolant::build(UT_PtrArray<TB_PointMatch *> matches, const GU_Detail * gdp)
+{
+    //GU_Detail *current_gdp,;
+    TB_PointMatch *current;
+    const GEO_Point  *ppt;
+    int entries = matches.entries();
+    int id;
+    
+     /// Initialize index and values arrays:
+    float *idx, *valx, *valy, *valz;
+    idx  = new float[entries]; 
+    valx = new float[entries];
+    valy = new float[entries];
+    valz = new float[entries];
+    
+    for (int i = 0; i < entries; i++) 
+        idx[i] = 1.0f*i/entries;
+        
+    memset(valx, 0.0, sizeof(float) * entries);
+    memset(valy, 0.0, sizeof(float) * entries);
+    memset(valz, 0.0, sizeof(float) * entries);
+    
+    GEO_AttributeHandle handle = gdp->getAttribute(GEO_POINT_DICT, "id");
+    
+    for (int i=0; i < gdp->points().entries(); i++)
+    {   
+        handle.setElement(gdp->points()(i));
         id = handle.getI();
-        /// TODO: Fix missing ids!
-        /// Points with no forward or backward
-        /// correspondences should be deleted from the gdp.    
-		prevppt = prev->find(id);
-		if (!prevppt) prevppt = (GEO_Point*)currppt;
-		nextppt = next->find(id);
-		if (!nextppt) nextppt = (GEO_Point*)currppt;
-		
-        /// BRI currently supports only floats.     
-		for (int j = 0; j < 3; j++)
-		{
-		    val[0] = prevppt->getPos()[j];
-		    val[1] = currppt->getPos()[j];
-		    val[2] = nextppt->getPos()[j];
-			TB_Bri * bri =  new TB_Bri(idx, val, 3, 2);
-			interpolants.at(j)->at(i) = bri;
-		}
-		i++;
-	}
-    this->valid = true;
+        
+        for (int g = 0; g < entries; g++)
+        {
+            current = matches(g);
+            ppt     = current->find(id);
+            if (!ppt) ppt = gdp->points()(i);
+	        valx[g] = ppt->getPos().x();
+		    valy[g] = ppt->getPos().y();
+		    valz[g] = ppt->getPos().z(); 
+	     }
+	       
+	    /// Three splines are created, values copied, and assigned to 'this':
+        TB_Bri * brix =  new TB_Bri(idx, valx, entries, entries-1);
+        TB_Bri * briy =  new TB_Bri(idx, valy, entries, entries-1);
+        TB_Bri * briz =  new TB_Bri(idx, valz, entries, entries-1);
+        interpolants.at(0)->at(i) = brix;
+        interpolants.at(1)->at(i) = briy;
+        interpolants.at(2)->at(i) = briz;
+    }
+    
+    delete idx; 
+    delete valx; 
+    delete valy;
+    delete valz;
+    valid = true;	
 }
 
 void
@@ -198,61 +228,77 @@ BRInterpolant::interpolate(float u, GU_Detail * const gdp) const
 	}
 }
 
-/// Interpolant based on UT_Spline class (native HDK splines).
-void
-SplineInterpolant::build(const GU_Detail * prev, 
-					     const GU_Detail * curr, 
-					     const GU_Detail * next)
-{
-	/// Call 5 knots builder:
-	build(prev, prev, curr, next, next);
-}
 
-void
-SplineInterpolant::build(const GU_Detail * prev2,
-                         const GU_Detail * prev, 
-					     const GU_Detail * curr, 
-					     const GU_Detail * next,
-                         const GU_Detail * next2)
+int
+SplineInterpolant::init_arrays(float *a, float *b, float *c,  float *d, int n) { return 0; }
+
+
+void 
+SplineInterpolant::build(UT_PtrArray<GU_Detail*> gdps, int current_frame)
 {
+    GU_Detail *current_gdp, *gdp;
+    const GEO_Point  *ppt;
+    current_gdp = gdps(current_frame);
+    int entries = gdps.entries();
     UT_Spline  *spline;
     fpreal32 v1[3]; 
-    int i = 0;
-    const GEO_Point * currppt;
-    const GU_Detail * gdps[] = {prev2, prev, curr, next, next2};
-
-    /// TODO: Wy could try multithreading on this loop.
-    FOR_ALL_GPOINTS(curr, currppt)
+    
+    for(int i = 0; i < current_gdp->points().entries(); i++)
     {
         spline  = new UT_Spline(); 
         spline->setGlobalBasis((UT_SPLINE_BASIS)itype);
-        spline->setSize(5, 3);
-
-        for (int j=0; j<5;j++)
+        spline->setSize(entries, 3);
+        
+        for (int g = 0; g < entries; g++)
         {
-            v1  = {gdps[j]->points()[i]->getPos().x(),
-                   gdps[j]->points()[i]->getPos().y(),
-                   gdps[j]->points()[i]->getPos().z()};
-            spline->setValue(j, v1, 3);
+            gdp    = gdps(g);
+            ppt    = gdp->points()(i);
+            v1[0]  = ppt->getPos().x();
+            v1[1]  = ppt->getPos().y();
+            v1[2]  = ppt->getPos().z();
+            spline->setValue(g, v1, 3);
         }
-        interpolants.at(i) = spline;	
-        i++;
-    } 
-    /// Interpolant is valid for evaluation.
-    /// This is quite optimistic assumption, 
-    /// as no checkes were performed.
-    this->valid = true;
+        interpolants.at(i) = spline;
+    }
+    valid = true;
 }
 
-void
-SplineInterpolant::build(TB_PointMatch   * prev, 
-					     const GU_Detail * curr, 
-					     TB_PointMatch   * next)
+
+void 
+SplineInterpolant::build(UT_PtrArray<TB_PointMatch *> matches, const GU_Detail * gdp)
 {
-	/// Call 5 knots builder:
-	/// TODO: placeholder
-	cout << "THIS IS ONLY PLACEHOLDER" << endl;
-	build(curr, curr, curr, curr, curr);
+    TB_PointMatch *current;
+    const GEO_Point  *ppt;
+    int entries = matches.entries();
+    UT_Spline  *spline;
+    fpreal32 v1[3]; 
+    int id;
+    
+    GEO_AttributeHandle handle = gdp->getAttribute(GEO_POINT_DICT, "id");
+    
+    for(int i = 0; i < gdp->points().entries(); i++)
+    {
+        handle.setElement(gdp->points()(i));
+        id = handle.getI();
+        
+        spline  = new UT_Spline(); 
+        spline->setGlobalBasis((UT_SPLINE_BASIS)itype);
+        spline->setSize(entries, 3);
+        
+        for (int g = 0; g < entries; g++)
+        {
+            current = matches(g);
+            ppt     = current->find(id);
+            if (!ppt) ppt = gdp->points()(i);
+            v1[0]  = ppt->getPos().x();
+            v1[1]  = ppt->getPos().y();
+            v1[2]  = ppt->getPos().z();
+            spline->setValue(g, v1, 3);
+        }
+        interpolants.at(i) = spline;
+    }
+    valid = true;
+    
 }
 
 void
