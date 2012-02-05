@@ -1,45 +1,24 @@
 /* 
-	Timeblender::VRAY_TimeBlender v.0.1.0, 11.05.2011, 
+    Timeblender::VRAY_TimeBlender v.0.1.1, 05.02.2012, 
+    Timeblender::VRAY_TimeBlender v.0.1.0, 11.05.2011, 
 
-	This is a VRAY Procedural DSO which computes a series of interpolated geometry
-	from time samples at rendertime. Main reason for doing this is when we don't have
-	an enough time steps in BGEO sequence to compute smooth non-linear motion blur.
-	This can be crappy animation pipeline which doesn't handle subframes,
-	or baked simulation (i.e. particles) with too high supersampling cost.
-
-	It's meant to be a replacement for Mantra Deleyed Load Shader, albeit it can't currently 
-	deal with materials archives stored in *.ifd files (HDK limitation).
+    This is a VRAY Procedural DSO which computes a series of interpolated geometry
+    from time samples at rendertime. 
 	
-	TimeBlender implements barycentric rational interpolation described here:
-		"Barycentric Rational Interpolation with no Poles and High Rates of Approximation"
-		by Michael S. Floater and Kai Hormann, and explain nicely in "Numerical Recipes".
-
-	This kind of function interpolation performs specially well with small number of samples.
-	It also quarantees to have second derivative ~= 0, what gives a desired smoothness. 
+    TimeBlender implements barycentric rational interpolation described here:
+    "Barycentric Rational Interpolation with no Poles and High Rates of Approximation"
+    by Michael S. Floater and Kai Hormann, and explain nicely in "Numerical Recipes".
 
 	skk.
 
 	TODO: 
-	- Fix Bounds! (done).
+	- Fix Bounds! (enlerment).
 	- Materials assigment (limited).
-	- Own implementation of BRI (done).
-	- UT_Splines (native HDK) interpolation (done).
-	- Five knots interpolation (done).
-	
-	- Interpolation of non-constant topological geometry 
-        -- Via attribute match (particles ID) (in progress).
-		-- Neigbhourhood search. 
-		
 	- Shutter retimer.
 		-- Extrapolate motion.
 		-- Nonlinear shutter retime a'la Pixar (?)
-	- Heavy geometry tests (speed and memory).
-	
 	- Threading. (HDK native method).
-	- Interpolate attributes: N, uv? 
-    - threading (native HDK point loops)
-		-- we need thread-safe vector for that.
-	
+	- Interpolate attributes: N, uv?,
 */
 
 #include "VRAY_TimeBlender.h"
@@ -55,18 +34,16 @@ using namespace TimeBlender;
 // Arguments:
 static VRAY_ProceduralArg theArgs[] =
 {
-    VRAY_ProceduralArg("threeknots","int",   "1"),
-    VRAY_ProceduralArg("prefile2",  "string", ""),
-    VRAY_ProceduralArg("prefile",   "string", ""),
-    VRAY_ProceduralArg("file",      "string", ""),
-    VRAY_ProceduralArg("nextfile",  "string", ""),
-    VRAY_ProceduralArg("nextfile2", "string", ""),
-    VRAY_ProceduralArg("dointerpolate","int",   "1"),
+  
+    VRAY_ProceduralArg("files","int", "0"),
+    VRAY_ProceduralArg("filename_string","string", ""),
     VRAY_ProceduralArg("nsamples",     "int",   "6"),
-    VRAY_ProceduralArg("itype",        "int",   "4"),
+    VRAY_ProceduralArg("itype",        "int",   "0"),
     VRAY_ProceduralArg("shutter",      "real",  "1"),
     VRAY_ProceduralArg("matchbyid",    "int",   "0"),
     VRAY_ProceduralArg("shutterretime", "int", "0"),
+    VRAY_ProceduralArg("shutter_start", "real", "0"),
+    VRAY_ProceduralArg("shutter_end", "real", "1"),
     /// These two are spare, as proc. get bounds in initialize(*box),
     /// Otherwise they need to be computed by us.
     VRAY_ProceduralArg("minbound", "real", "-1 -1 -1"),
@@ -78,20 +55,20 @@ static VRAY_ProceduralArg theArgs[] =
 VRAY_Procedural * 
 allocProcedural(const char *)
 {
-	return new VRAY_TimeBlender();
+    return new VRAY_TimeBlender();
 }
 
 // Return argumentes
 const VRAY_ProceduralArg * 
 getProceduralArgs(const char *)
 {
-	return theArgs;
+    return theArgs;
 }
 
 // Initialiser:
 VRAY_TimeBlender::VRAY_TimeBlender()
 {
-	myBox.initBounds(0,0,0);
+    myBox.initBounds(0,0,0);
 }
 
 //Deallocator:
@@ -101,54 +78,61 @@ VRAY_TimeBlender::~VRAY_TimeBlender() {}
 const char * 
 VRAY_TimeBlender::getClassName()
 {
-	return "VRAY_IGeometry";
+    return "VRAY_TimeBlender";
 }
 
 // Initilize and set bounds:
 int 
 VRAY_TimeBlender::initialize(const UT_BoundingBox *box)
 {
-	/// Main file:
-	if (!import("file", myfile)) 
-	{
-		fprintf(stderr, "At least current frame must be specified.");
-		return 0;	
-	}
+	
+    /// Import filename_string, ie. whitespace separated list of files: 
+	/// "file.bgeo file2.bgeo...". 
+    if (!import("filename_string", myfilenamestring))
+    {
+        debug("Can't read filenames!");
+        return 0;
+    }
+	
+	/// Tokenize names and save in myfilenamelist.
+    myfilenamestring.tokenize(myfilenamelist, " ");
 
     /// Params:
-	if (!import("dointerpolate", &mydointerpolate, 1)) 
-		mydointerpolate = 1;	
-    if (!import("threeknots", &mythreeknots, 1)) 
-        mythreeknots = 1;
+    if (!import("shutter_start", &myshutterstart, 1))
+        myshutterstart = 0;    
+        
+    if (!import("shutter_end", &myshutterend, 1))
+        myshutterend = 1;  
+    
+    if (!import("files", &myfiles, 1))
+        myfiles = 0;
+        
     if (!import("shutter", &myshutter, 1))
         myshutter = 1;
+        
     if (!import("nsamples", &mynsamples, 1))
         mynsamples = 6;
+        
     if (!import("itype", &myitype, 1))
-        myitype = 4;
+        myitype = 0;
+        
     if (!import("matchbyid", &mymatchbyid, 1))
         mymatchbyid = 0;
-
-    /// Time samples:
-	if (!import("prefile", myprefile))  cout << "No pre sample to interpolate." << endl;
-	if (!import("nextfile", mynextfile)) cout << "No post sample to interpolate." << endl;
-
-    /// Knots:
-	if (mythreeknots == 0)
-	{
-		import("prefile2", myprefile2);
-		import("nextfile2", mynextfile2); 
-	}
-
-	/// Bounding box (optionally from a file).
-	/// TODO: Bounds should be enlarged with all gdps involved
-	/// in interpolation:
-	if (!box)
-	{
-        debug("Warning! No bounding box specified. Computing it from a sources.");
+    
+    
+        /// TODO: Do we need this, or not?
+        mycurrentframe = 0;
+        
+        
+    /// Bounding box (optionally from a file).
+    /// TODO: Bounds should be enlarged with all gdps involved
+    /// in interpolation:
+    if (!box)
+    {
+        debug("Warning! No bounding box specified. Computing from an input.");
         GU_Detail gdp;
         UT_BoundingBox * gdpbox = new UT_BoundingBox();
-        gdp.load(myfile, 0);
+        gdp.load(myfilenamelist(mycurrentframe), 0);
         gdp.getPointBBox(gdpbox);
         myBox = *gdpbox;
      } 
@@ -156,192 +140,108 @@ VRAY_TimeBlender::initialize(const UT_BoundingBox *box)
      {
         myBox = *box;
      }
-	return 1;
+    return 1;
 }
 
 // Return bounding box of a procedural:
 void
 VRAY_TimeBlender::getBoundingBox(UT_BoundingBox &box)
 { 
-	box = myBox;
+    box = myBox;
 }
 
 // Actual render:
 void 
 VRAY_TimeBlender::render()
 {
-	GU_Detail *gdp, *gdpp, *gdpn, *gdpp2, *gdpn2;
-
-	gdpp = allocateGeometry();
-	gdp  = allocateGeometry();
-	gdpn = allocateGeometry();
-
-	if (gdpp->load(myprefile,0) < 0) 
-	{
-		cout << "Can't open pre frame geometry: " << myprefile << endl;
-		freeGeometry(gdpp);
-		gdpp = 0;
-	}
-
-	if (gdp->load(myfile, 0) < 0)
-	{
-		cout << "Can't open current frame geometry: " << myfile << endl;
-		freeGeometry(gdp);
-		gdp = 0;
-		return;
-	}
-
-	if (gdpn->load(mynextfile, 0) < 0)
-	{
-		cout << "Can't open next frame geometry: " << mynextfile << endl;
-		freeGeometry(gdpn);
-		gdpn = 0;
-	}
-	
-	/// 5 knots mode:
-	if (!mythreeknots)
-	{
-		gdpp2 = allocateGeometry();
-		gdpn2 = allocateGeometry();
-
-		if (gdpp2->load(myprefile2, 0) < 0)
-		{
-			cout << "Can't open pre pre frame geometry: " << myprefile2 << endl;
-			freeGeometry(gdpp2);
-			gdpp2 = 0;
-		}
-
-		if (gdpn2->load(mynextfile2, 0) < 0)
-		{
-			cout << "Can't open second next frame geometry: " << mynextfile2 << endl;
-			freeGeometry(gdpn2);
-			gdpn2 = 0;
-		}
-    }
-		
-    /// Main part goes here:
+    /// Create gdps and store it into array:    
+    UT_PtrArray <GU_Detail *> gdps;
+    for (int i = 0; i < myfilenamelist.getArgc(); i++)
+    {
+        GU_Detail *gdp;
+        gdp = allocateGeometry();
+        if (gdp->load(myfilenamelist(i), 0) < 0)
+        {
+            cout << "Can't open geometry: " << myfilenamelist(i) << endl;
+            freeGeometry(gdp);
+            gdp = NULL;
+        }
+        gdps.append(gdp);
+    } 
+    
+    /// No geometries what-so-ever? return!
+    if (gdps.entries() == 0) return;
+   
     /// TODO: assign shaders
-    #ifdef DEBUG 
-        TB_PointMatch * matcher = new TB_PointMatch();
-        matcher->initialize((const GU_Detail *)gdp, 0);
-        cout << "TB_PointMatch entries: "<< matcher->entries() << endl;
-        GEO_Point * ppt = matcher->find(10);
-        if (ppt)
-            cout << ppt->getPos()[0] << ppt->getPos()[1] << ppt->getPos()[2] << endl;
-        else
-            cout << "No point!" << endl;
-    #endif
     openGeometryObject();
-    changeSetting("surface", "plastic diff (1.0 0.8 0.8)", "object");
-
-    #ifdef DEBUG
-        debug("openGeometryObject();");
-    #endif
-	/// Perform geometry interpolation.
-    if (mydointerpolate)	
-    { 
-        GeoInterpolant * gi;
-        TB_PointMatch  * prevmatch, * nextmatch;
-        static const fpreal min = 0.0, max = 1.0, nmin = 0.5; 
-		fpreal nmax = 1.0;
-		
-        if (!mythreeknots) 
-            nmax = 0.75; 
-
-        fpreal32 fshutter = 0, shutter= 0;
-        GU_Detail *bgdp;
-		
-		/// Allocate interpolant for npoints, and choose type:
-        if (myitype	== INTER_BARYCENTRIC)
+    //changeSetting("surface", 1, *shop_materialpath.buffer());
+    changeSetting("surface", "plastic diff ( .8 .2 0 )", "object");
+    
+    /// Perform geometry interpolation.
+    if (myitype != TB_INTER_NONE)	
+    {   
+        GeoInterpolant *gi;
+        UT_PtrArray<TB_PointMatch*> match_array;
+        
+        if (myitype == TB_INTER_BARYCENTRIC) 
+            gi = new BRInterpolant(gdps(mycurrentframe)->points().entries());
+        else 
+            gi = new SplineInterpolant(gdps(mycurrentframe)->points().entries(), myitype);
+        
+        /// Match points by id instead of numbering:         
+        if (mymatchbyid && gdps(mycurrentframe)->getPointAttribute("id").isAttributeValid())
         {
-           gi = new BRInterpolant(gdp->points().entries());
+            for (int i = 0; i < gdps.entries(); i++)
+            {
+                TB_PointMatch * match;
+                match = new TB_PointMatch(gdps(i), CORR_POINT_ID);
+                match_array.append(match);
+            }
+            gi->build(match_array, gdps(mycurrentframe));
         }
         else
         {
-           gi = new SplineInterpolant(gdp->points().entries(), myitype);
-        }
+            /// FIXME: We should  catch cases of non-matching geometries.
+            /// Poin-to-point by number:
+            gi->build(gdps,  mycurrentframe);  
+        }   
         
-        /// If not allocated...
-        if (!gi->isAlloc())
+        /// Loop over samples generating interpolated geometry and add them to Mantra
+		for (int i=0; i <= mynsamples-1; i++)
         {
-            debug("Couldn't allocate storate for the interpolant.");
-            return; 
-        }
-
-		/// Build the interpolant from provided gdps (3 or 5). 
-        if (mythreeknots)
-        {
-            /// If "id" has been found, build the interpolant based on TB_PointMatch:
-            if (mymatchbyid && gdp->getPointAttribute("id").isAttributeValid())
-            {
-                /// TODO: Properly handle exeption: "no id attrribute found".
-                prevmatch = new TB_PointMatch(gdpp, CORR_POINT_ID);
-                nextmatch = new TB_PointMatch(gdpn, CORR_POINT_ID);
-                gi->build(prevmatch, (const GU_Detail *) gdp, nextmatch);
-            }
-            else
-            {
-                /// or use plain GU_Details':
-                gi->build(gdpp, gdp, gdpn);
-            }
-        }
-        else
-        {
-            /// Currently this doesn't work.
-            if (mymatchbyid) debug("5 knobs interpolation doesn't work with match by id."); 
-            gi->build(gdpp2, gdpp, gdp, gdpn, gdpn2);
-        }
-        
-        /// Is interpolator valid?
-        if (!gi->isValid())
-        {
-            debug("Couldn't build the interpolant.");
-            return;
-        }
-
-		/// Loop over samples generating interpolated geometry and add them to Mantra
-		for (int i =0; i <= mynsamples; i++)
-		{
-			fshutter = shutter = (1.0f*i/mynsamples);
-
-			/// We remap shutter to a proper range, since we have 
-			/// effectively motion paths beyond Houdini's shutter:
-			/// 0.5->1.0 for 3 knots, 0.5->0.75 for 5 knots.
-			/// TODO: This could be controled by artist.
-			fshutter = SYSfit(shutter, min, max, nmin, nmax);
+            fpreal fshutter = 0; 
+            fpreal shutter  = 0;      
+            fshutter = shutter = (1.0f*i/mynsamples);
+            fshutter = SYSfit(shutter, 0.0f, 1.0f, myshutterstart, myshutterend);
+            cout << "fshutter: " << fshutter << endl;
             
-			/// Allocate blur file and copy initial from current frame gdp.
-			bgdp = allocateGeometry();
-			bgdp->copy((const GU_Detail ) gdp, 0, false, true);
+            /// Allocate blur file and copy initialy from current frame gdp.
+            GU_Detail  *bgdp;
+            bgdp = allocateGeometry();
+            bgdp->copy((const GU_Detail ) gdps(mycurrentframe), 0, false, true);
 		
-			/// Call interpolator, which replaces points' positions 
-			/// (and only positions!(?)), finnaly add new blur file.
-			if (bgdp && gi->isValid())
-			{
-				#ifdef DEBUG
-					debug("Interpolating");
-				#endif
-				/// We evaluate interpolant on remapped time
-				/// but add it to a scene on user time (?)
-				gi->interpolate(fshutter*myshutter, bgdp);
-				addGeometry(bgdp, shutter*myshutter);
-				//referenceGeometry(bgdp);
-			} 
-			else 
-			{
-				closeObject();
-			}
-		}
-	} 
-	else 
-	/// Proceed with standard blur file:
-	{
-		addGeometry(gdp, 0); 
-		if (gdpn) 
-		{
-			addGeometry(gdpn, myshutter);	
-		}
-	}
-	
-	closeObject();
+            /// Call interpolator, which replaces points' positions 
+            if (bgdp && gi->isValid())
+            {
+                gi->interpolate(fshutter, bgdp);
+                addGeometry(bgdp, shutter*myshutter);
+            } 
+            else 
+            {
+                closeObject();
+            }
+        }
+        delete gi;
+    } 
+    else
+    {
+        debug("Proceeding with standard blur files.");
+        for (int i = 0; i < gdps.entries(); i++)
+        {
+            cout << "shutter: " << 1.0f*i/gdps.entries() * myshutter << endl;
+            addGeometry(gdps(i), 1.0f*i/gdps.entries() * myshutter); 
+        }
+    }
+
+    closeObject();	
 }

@@ -16,11 +16,11 @@ namespace TimeBlender
 /// Interpolation type enumarator. 
 typedef enum {
 
-	INTER_CONSTANT,     /*Native HDK UT_Splines*/
-	INTER_LINEAR,					 
-	INTER_CATMULLROM,
-	INTER_CUBIC,
-	INTER_BARYCENTRIC,  /*Barycentric Rational Interpolation*/          
+	TB_INTER_NONE,   /* None */
+	TB_INTER_LINEAR, /*Native HDK UT_Splines*/				 
+	TB_INTER_CATMULLROM,
+	TB_INTER_CUBIC,
+	TB_INTER_BARYCENTRIC,  /*Barycentric Rational Interpolation*/          
 
 } TB_INTER_TYPES;
 
@@ -37,56 +37,52 @@ inline void debug(const char * info)
 		{ cout << info << endl;}
 
 
-/* Abstract class for storing interpolants. */
+/*********************************************************
+ Abstract class for storing interpolants. 
+ ********************************************************/
+ 
 class GeoInterpolant
 {
 public:
 	/// Call it in a default constractor.
-	virtual int   initialize(int size, int typem) = 0;
-
-	/// Build structures necessery to do work.
-	/// TODO: 3 & 5 versions + GU_Details and TB_PointMatch
-	/// should be consolidated (more and more code as repeated).
-	virtual void  build(const GU_Detail * prev, 
-                        const GU_Detail * curr, 
-                        const GU_Detail * next)  = 0;
-
-	virtual void  build(const GU_Detail *,
-                        const GU_Detail *,
-                        const GU_Detail *, 
-                        const GU_Detail *, 
-                        const GU_Detail *)  = 0;
-                        
-    /// This one deals with TB_PointMatch to find
-    /// coresponding points by ids.
-    virtual void build(TB_PointMatch   *, 
-                       const GU_Detail *, 
-                       TB_PointMatch   *) = 0;
-                       
-	/// This interpolates previously built stractures, and modifies
-	/// GU_Detail accoring to it.
+	virtual int initialize(int size, int typem) = 0;
+	
+	/// Build interpolant with plain GU_Details:
+    virtual void build(UT_PtrArray<GU_Detail*> gdps, int current_frame) = 0;
+    
+    /// Build interpolant with Point Match: red/black tree 
+    /// (std::map) for point-point by id matching
+    virtual void build(UT_PtrArray<TB_PointMatch *>, const GU_Detail *) = 0;    
+       
+	/// This computes interpolattion and modifies GU_Detail's 'P' accoring to it.
 	virtual void interpolate(const float, GU_Detail  * const) const = 0;
 
-	/// Object details.
-	/// TODO: implement getMemoryUsage()
-	/// TODO: implement allocation error checker.
-	/// TODO: implement load(), save().
-
+	/// Avarage mem usage:
+	virtual int getMemoryUsage() const = 0;
+	
+	/// Utilities:
+	virtual int init_arrays(float *a, float *b,
+	                float *c,  float *d, int n) = 0;
+	                
 	virtual int getitype() const = 0;
 	virtual bool isValid() const = 0;
 	virtual bool isAlloc() const = 0;
 
 private:
-     /// TODO: This probably shouldn't be in an abstract class. 
+     ///  This probably shouldn't be in an abstract class?
      int  mySize;
      bool valid;
      bool alloc;
      int  itype;
 };
 
+
+/* ***************************************************************************************
 /// An implementation of Barycentric Rational Interpolation based on: "Numerical Recipes",
 /// and "Barycentric Rational Interpolation with no Poles and High Rates of Approximation",
 /// by Michael S. Floater  and Kai Hormann.
+******************************************************************************************/
+
 class TB_Bri
 {
 public:
@@ -112,6 +108,7 @@ public:
     float evaluate(float u) const;
     
     int isAlloc() {return alloc;}
+    int getMemoryUsage() { return size * sizeof(float) * 3;}
     
     /// TODO: make possible to reinitialize interpolant 
     /// with different order value (keeping arrays)
@@ -126,61 +123,62 @@ private:
     float *wei;
 };
 
-/// The interpolator based on TB_Bri (barycentric rational).
+/****************************************************************
+/ The interpolator based on TB_Bri (see above).
+*****************************************************************/
+
 class BRInterpolant : public GeoInterpolant
 {
 public:
 	// Allocate vectors for storing interpolants structures
-	BRInterpolant(int size, int type = INTER_BARYCENTRIC)
+	BRInterpolant(int size, int type = TB_INTER_BARYCENTRIC)
 	{
 		if(!initialize(size, type)) alloc = false;
-	}	
+	};
 	
 	/// This requires initialization.
 	BRInterpolant()
 	{
 		valid = false;
 		alloc = false;
-	}
+	};
 
 	/// Allocate memory, set flags.
 	int initialize(int size, int type)
 	{
 		interpolants.resize(3);
-		X.resize(size); Y.resize(size);
-		Z.resize(size);
+		X.resize(size, NULL); Y.resize(size, NULL);
+		Z.resize(size, NULL);
 		interpolants.at(0) = &X;
 		interpolants.at(1) = &Y;
 		interpolants.at(2) = &Z;
 		
-		itype      = INTER_BARYCENTRIC;
+		itype      = TB_INTER_BARYCENTRIC;
 		mySize     = size;
 		valid      = false;
 		alloc      = true;
 		return 1;
-	}
+	};
     
-    /// 3 and 5 versions should be merged with arrays?
-	void  build(const GU_Detail * prev, 
-			    const GU_Detail * curr, 
-			    const GU_Detail * next);
-			    
-    void  build(const GU_Detail *,
-                const GU_Detail *,
-                const GU_Detail *, 
-                const GU_Detail *, 
-                const GU_Detail *);
-    
-    void build(TB_PointMatch   * prev, 
-               const GU_Detail * curr, 
-               TB_PointMatch   * next);
-	
+    /// Three main methods, builds with gdps, with red/black trees, 
+    /// and interpolate positions in gdp:
+    void build(UT_PtrArray<GU_Detail*> gdps, int current_frame);        
+    void build(UT_PtrArray<TB_PointMatch *>, const GU_Detail *);
 	void interpolate(const float, GU_Detail * const) const;
 	
+	/// The summ of ocupied memory:
+	int getMemoryUsage() const 
+	{ 
+	    int mem = 0;
+	    if (alloc) 
+	        mem = X.at(0)->getMemoryUsage() * mySize * 3;
+	    return mem;
+	};
+	
+	/// Utilities:
+	int init_arrays(float *a, float *b, float *c,  float *d, int n);
 	int getitype() const { return itype; };
-	
 	bool isValid() const { return valid; };
-	
 	bool isAlloc() const { return alloc; }; 
 
 private:
@@ -196,12 +194,16 @@ private:
 	vector <vector<TB_Bri  *> *>  interpolants;
 };
 
-/// Interpolator based on UT_Spline.
+
+/*************************************************************
+/ Interpolator based on HDK UT_Spline.
+*************************************************************/
+
 class SplineInterpolant : public GeoInterpolant
 {
 public:
 	// Allocate vectors for storing interpolants structures
-	SplineInterpolant(int size, int type = INTER_CUBIC)
+	SplineInterpolant(int size, int type = TB_INTER_CUBIC)
 	{
 		if (!initialize(size, type)) alloc = false;
 	}
@@ -211,7 +213,7 @@ public:
 	{
 		valid              = false;
 		alloc              = false;
-	}
+	};
 
 	/// Allocate memory, set flags.
 	int initialize(int size, int type)
@@ -222,28 +224,26 @@ public:
 		valid              = false;
 		alloc              = true;
 		return               1;
-	}
-
-	void  build(const GU_Detail * prev, 
-			    const GU_Detail * curr, 
-			    const GU_Detail * next);
-
-	void  build(const GU_Detail * prev2,
-	            const GU_Detail * prev,
-	            const GU_Detail * curr, 
-	            const GU_Detail * next,
-	            const GU_Detail * next2);
+	};
 	            
-	void build(TB_PointMatch   * prev, 
-               const GU_Detail * curr, 
-               TB_PointMatch   * next);
-
-
+    void build(UT_PtrArray<GU_Detail*> gdps, int current_frame);
+    void build(UT_PtrArray<TB_PointMatch *>, const GU_Detail *);
 	void interpolate(const float, GU_Detail * const) const;
 
 	int getitype() const { return itype; };
 	bool isValid() const { return valid; };
-	bool isAlloc() const { return alloc; }; 
+	bool isAlloc() const { return alloc; };
+	
+	
+	int getMemoryUsage() const 
+	{ 
+	    // No idea...
+	    int mem = 0;
+	    return mem;
+	};
+	
+	int init_arrays(float *a, float *b,
+	                float *c,  float *d, int n);
 
 private:
 	inline void evaluate(const int *x, int *y, float *u, float *w) const;
