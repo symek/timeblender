@@ -1,0 +1,26 @@
+VRAY_TimeBlender v.0.1.1, 05.02.2012, 
+
+This is a VRAY Procedural DSO which computes a series of interpolated geometry
+from time samples at rendertime. It acts as a replacement for Mantra Delay Load Archive,
+which allows you to attach more than a single blur file to your archive. 
+
+You can use both super-sampled geometries and integer frame geometries, with or without
+interpolation applied. Additionally, you can render particles  with variable point count,
+prividing geometry with 'id' point attribute present. 
+        
+Besides Houdini native splines, TimeBlender uses barycentric rational interpolator:
+"Barycentric Rational Interpolation with no Poles and High Rates of Approximation"
+by Michael S. Floater and Kai Hormann. Implementation is based on "Numerical Recipes".
+
+Things to fix:
+1) Enlarge bounds with all geometry involved.
+2) Assing material.
+3) Shutter nonlinear retime.
+4) Delete missing points.
+5) Interpolate attributes (currently only P is used).
+6) Threading. 
+7) Recreate workflow for SOPs (replace TimeblendSOP).
+8) Bugs?
+
+Questions:
+szymon.kapeniak@gmail.com
