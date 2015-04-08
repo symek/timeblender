@@ -1,0 +1,8 @@
+## How smooth is smooth enough? ##
+> I felt at the beginning that to interpolate geometry without super-sampling, I need a function which automatically adopts itself for a most smooth solution between consequence samples possible. In other words, I looked for an interpolation function which has a constant 2nd derivative, meaning it has a constant curvature along the whole domain.
+
+> Apparently splines are not those, but why do I wanted such a function? Well, first because such function is smooth enough to look like an approximation of predictably moving object. But can we except this?
+
+> If you think about your geometry moving frame by frame as a discretized function, it is bandwidth limited, ie. it was recorded with limited resolution by Houdini during export. So called _sampling theorem_ guarantees, that any motion recorded (sampled) by evenly spaced camera shutter will have no "events" happening below Nyquist critical frequency. In other words, movement of an objects animated inside Houdini, and recorded once per frame in ifd/bgeo, **must** have a constant acceleration from frame to frame (usually its a straight line -> acceleration = 0). In opposite case, there would be changes of the underlaying function (our animation **after export**) present in-between samples, what seems to violate a rule of bandwidth limited signal. Of course our signal resolution, ie. $FPS, may be too small to properly express our animation, but that's different topic. What I wanted is to have an interpolator which doesn't add/remove from what I have before interpolation.
+
+> Anyway above led me to a **Barycentric Rational Interpolation**.

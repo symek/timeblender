@@ -1,0 +1,10 @@
+### Motivation ###
+So, basically, at the recent project I have been collaborating, we screwed up a couple of shots even more than usual, because of a subtle problem of a lack of an animation super-sampling, which causes linear motion blur in rendering. I promised myself to look closer to the subject.
+
+While well-thought animation->rendering pipeline _should_ provide an adequate number of time samples for your geometry, this is not always the case. There could be a number of reasons, like a crappy geometry container, animation rigs, high cost of super-sampling (particles) or Delayed Load pipeline, which at sight put you in troubles as Mantra's own DLA procedural shader can't deal with multi sampled motion blur at all (whereas underlying HDK::VEX\_Procedural handles it well). Finally non-constant topologies (or non-topologies like particles field) expose you to the same problem: you can't properly blur your geometry in time.
+
+### Solution ###
+TimeBlender aims to solve these issues through the vulgar concept of generating interpolated geometry from a provided samples. It implements, among built-in spline types, an interpolator called **barycentric rational**, which suits well for the purpose as it guarantees to have constant curvature along the domain. TimeBlender deals also with indexing of points based on ID attribute, what allows to _nicely_ motion blur particles based on multi-sampled deformation, rather than the velocity attribute (which is always linear, thus ugly per se). Finally, you don't have to interpolate geometry at all, but render it as it is, but with multiply blur files.
+
+### Issues ###
+Interpolating geometry at rendertime may cost additional amount of memory, because we are effectively providing Mantra with a copies of an input geometry (usually between 3 and 6). Interpolation also is just that, guessing values from a provided samples. Generally it's much better to keep the data all the time, instead of guessing it later.
