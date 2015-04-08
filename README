@@ -1,3 +1,5 @@
+(ON HOLD / this code is outdated and not usable)
+
 VRAY_TimeBlender v.0.1.1, 05.02.2012, 
 
 DESCRIPTION
@@ -14,31 +16,7 @@ Besides Houdini native splines, TimeBlender uses barycentric rational interpolat
 "Barycentric Rational Interpolation with no Poles and High Rates of Approximation"
 by Michael S. Floater and Kai Hormann. Implementation is based on "Numerical Recipes".
 
-
-INSTALL
-
-To install, as usual, source Houdini's environment:
-
-> cd houdini/path
-> source houdini_setup_bash
-
-then cd to timeblender directory and:
-
-> make
-
-a) Copy VRAY_TimeBlender.so/dll to one of $HOUDINI_PATH/dso location (like $HOME/houdinix.x/dso/mantra).
-b) Copy otls/TimeBlender_vX.x.x.otl to your location (like $HOME/houdinix.x/otls)
-c) Copy (if it doesn't exist there) VRAYprocedural from $HFS/houdini to $HOME/houdinix.x
-d) Add bellow line to the file (read comments inside it): 
-   timeblender DSO_FILE(VRAY_TimeBlender);
-   
-   
-USAGE:
-   Most parameters has pop-ups with Help.
-   TBD.
-
-
-ISSUES:
+TODO:
 1) Enlarge bounds with all geometry involved.
 2) Assing material.
 3) Shutter nonlinear retime.
@@ -46,9 +24,3 @@ ISSUES:
 5) Interpolate attributes (currently only P is used).
 6) Threading. 
 7) Recreate workflow for SOPs (replace TimeblendSOP).
-8) Bugs?
-
-You can reach me at:
-szymon.kapeniak@gmail.com
-
-Thanks!
